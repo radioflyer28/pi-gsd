@@ -188,6 +188,20 @@ test("dispatcher run truncates large command output through the configured trunc
   assert.match(result.text, /^truncated:/);
 });
 
+test("dispatcher run keeps spawned command output memory-bounded before final truncation", async () => {
+  const dispatcher = createGsdDispatcher({
+    gsdToolsCommand: process.execPath,
+    detect: () => capabilities("inline"),
+  });
+
+  const result = await dispatcher.run(["-e", "process.stdout.write('a'.repeat(70000)); process.stderr.write('b'.repeat(70000));"], process.cwd());
+
+  assert.match(result.text, /stream output truncated before process close/);
+  assert.ok(result.text.length < 50_500);
+  assert.match(result.text, /a+\n\[stderr\]/);
+  assert.match(result.text, /b+$/);
+});
+
 test("dispatcher run falls back to Node spawn when pi.exec is unavailable", async () => {
   const dispatcher = createGsdDispatcher({
     gsdToolsCommand: process.execPath,

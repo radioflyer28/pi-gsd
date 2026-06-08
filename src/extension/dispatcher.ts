@@ -211,6 +211,45 @@ function formatExecResult(result: PiExecResult | string): string {
   return [`gsd-tools exited with ${exitCode}`, output ? `\n${output}` : ""].join("\n");
 }
 
+class StreamingTextTail {
+  private chunks: string[] = [];
+  private retainedChars = 0;
+  private totalChars = 0;
+  private readonly maxChars: number;
+
+  constructor(maxChars: number) {
+    this.maxChars = maxChars;
+  }
+
+  append(chunk: string): void {
+    if (!chunk) return;
+    this.totalChars += chunk.length;
+    this.chunks.push(chunk);
+    this.retainedChars += chunk.length;
+
+    while (this.retainedChars > this.maxChars && this.chunks.length > 0) {
+      const overflow = this.retainedChars - this.maxChars;
+      const first = this.chunks[0];
+      if (first.length <= overflow) {
+        this.chunks.shift();
+        this.retainedChars -= first.length;
+      } else {
+        this.chunks[0] = first.slice(overflow);
+        this.retainedChars -= overflow;
+      }
+    }
+  }
+
+  text(): string {
+    const tail = this.chunks.join("");
+    if (this.totalChars <= this.retainedChars) return tail;
+    return [
+      `[stream output truncated before process close: showing last ${this.retainedChars}/${this.totalChars} chars]`,
+      tail,
+    ].join("\n");
+  }
+}
+
 async function execWithNodeSpawn(
   command: string,
   args: string[],
@@ -223,26 +262,27 @@ async function execWithNodeSpawn(
       windowsHide: true,
       signal: options.signal,
     });
-    let stdout = "";
-    let stderr = "";
+    const streamTailChars = Math.floor(DEFAULT_MAX_OUTPUT_CHARS / 3);
+    const stdout = new StreamingTextTail(streamTailChars);
+    const stderr = new StreamingTextTail(streamTailChars);
 
     child.stdout?.setEncoding("utf8");
     child.stderr?.setEncoding("utf8");
     child.stdout?.on("data", (chunk) => {
-      stdout += chunk;
+      stdout.append(String(chunk));
     });
     child.stderr?.on("data", (chunk) => {
-      stderr += chunk;
+      stderr.append(String(chunk));
     });
     child.on("error", (error) => {
       if (options.signal?.aborted) {
-        resolve({ stdout, stderr: stderr || "Cancelled while running.", exitCode: 130 });
+        resolve({ stdout: stdout.text(), stderr: stderr.text() || "Cancelled while running.", exitCode: 130 });
         return;
       }
       reject(error);
     });
     child.on("close", (exitCode) => {
-      resolve({ stdout, stderr, exitCode: exitCode ?? 0 });
+      resolve({ stdout: stdout.text(), stderr: stderr.text(), exitCode: exitCode ?? 0 });
     });
   });
 }

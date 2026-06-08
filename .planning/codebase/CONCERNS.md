@@ -82,11 +82,12 @@
 - Cause: `detectCapabilities()` probes package-local and optional Pi package paths with `fs.existsSync()`. `discoverGsdCoreCommands()` reads command markdown synchronously during registration. `findExternalGsdSkillPaths()` scans global skill directories synchronously during doctor.
 - Improvement path: Keep synchronous probes bounded to known directories. If startup latency grows, cache command discovery during extension registration and expose a reload path rather than scanning broader trees.
 
-**Command output accumulation is unbounded before truncation:**
-- Problem: `execWithNodeSpawn()` accumulates full stdout/stderr strings, and truncation happens only after the child process closes.
+**Command output accumulation is bounded before final truncation:**
+- Status: Resolved for the built-in Node spawn fallback on 2026-06-08.
+- Previous problem: `execWithNodeSpawn()` accumulated full stdout/stderr strings, and truncation happened only after the child process closed.
 - Files: `src/extension/dispatcher.ts`, `src/extension/index.ts`, `tests/dispatcher.test.ts`
-- Cause: stdout/stderr listeners append all chunks to memory, then `truncateTailText()` or `truncateForPiTool()` trims the final text.
-- Improvement path: For commands that can emit very large output, implement streaming tail buffers inside `execWithNodeSpawn()` while preserving `PiExec` compatibility. Add a regression test in `tests/dispatcher.test.ts` for memory-bounded truncation behavior.
+- Current mitigation: `execWithNodeSpawn()` now keeps separate streaming tail buffers for stdout and stderr before producing the final `PiExecResult`, while preserving the external `PiExec` compatibility surface. Final Pi-facing truncation still happens through `truncateTailText()` / `truncateForPiTool()`.
+- Remaining limit: Custom `pi.exec` implementations supplied by the Pi runtime may still return already-accumulated strings; pi-gsd can only bound memory for its own fallback spawn path.
 
 **Model registry lookup can scan available models repeatedly:**
 - Problem: `findPiModel()` calls `availableModels()` and filters candidates when a provider/id direct lookup fails or the model reference lacks a provider.
@@ -156,9 +157,10 @@
 
 ## Missing Critical Features
 
-**No CI workflow detected:**
-- Problem: The repository has scripts for typecheck, build, and test, but no detected `.github/workflows` or other CI configuration in the current tree.
-- Blocks: Automated verification of `npm run typecheck`, `npm run build`, and `npm test` on pull requests is not enforced by the repository itself.
+**CI workflow present:**
+- Status: Resolved on 2026-06-08.
+- Previous problem: The repository had scripts for typecheck, build, and test, but no detected `.github/workflows` or other CI configuration in the current tree.
+- Current mitigation: `.github/workflows/ci.yml` runs `npm ci`, `npm run typecheck`, `npm run build`, and `npm test` on pushes to `main` and pull requests.
 
 **No live Pi integration test harness:**
 - Problem: Tests use mocks for Pi APIs and a smoke test for package-local `gsd-tools`, but no automated test loads the extension in a real Pi runtime.
@@ -177,19 +179,22 @@
 - Priority: High
 
 **Model routing edge cases:**
-- What's not tested: Invalid `.pi-gsd/model-routing.json`, `fallback: "error"`, `fallback: "omit"`, failed `pi.setModel()`, unavailable `ctx.ui.select`, ambiguous model names, command-vs-skill inference for unknown targets, and session override precedence beyond the prompt path.
-- Files: `src/extension/model-routing.ts`, `src/extension/register.ts`, `tests/register.test.ts`
+- What's now tested: Invalid `.pi-gsd/model-routing.json`, `fallback: "error"`, `fallback: "omit"`, and session override precedence are covered in `tests/model-routing.test.ts`.
+- What's still not tested: failed `pi.setModel()`, unavailable `ctx.ui.select`, ambiguous model names, and command-vs-skill inference for unknown targets.
+- Files: `src/extension/model-routing.ts`, `src/extension/register.ts`, `tests/register.test.ts`, `tests/model-routing.test.ts`
 - Risk: GSD model guidance can silently inherit an unintended model or set only part of the intended runtime state.
-- Priority: High
-
-**Command discovery edge cases:**
-- What's not tested: Multiple real upstream command files, missing command directory, malformed frontmatter, nested command folders, duplicate normalized slash names, Windows path rewriting, and placeholder combinations beyond `$ARGUMENTS` and `$1`.
-- Files: `src/extension/gsd-core-commands.ts`, `src/extension/register.ts`, `tests/register.test.ts`
-- Risk: Upstream command changes can remove or mis-register slash commands without obvious compile-time failures.
 - Priority: Medium
 
+**Command discovery edge cases:**
+- What's now tested: Multiple upstream-style command files, missing command directory, malformed/missing frontmatter, quoted argument placeholder expansion, and package-local GSD Core path rewriting are covered in `tests/gsd-core-commands.test.ts`.
+- What's still not tested: nested command folders, duplicate normalized slash names, and a live Windows command-palette path rewrite assertion.
+- Files: `src/extension/gsd-core-commands.ts`, `src/extension/register.ts`, `tests/register.test.ts`, `tests/gsd-core-commands.test.ts`
+- Risk: Upstream command changes can remove or mis-register slash commands without obvious compile-time failures.
+- Priority: Low
+
 **Child process and cancellation behavior under load:**
-- What's not tested: Large stdout/stderr memory behavior, process cancellation after spawn starts, Windows `.cmd` shell invocation, stderr-only failures with very large output, and non-UTF8 output.
+- What's now tested: Large stdout/stderr from the Node spawn fallback is covered by a regression test that verifies streaming tail truncation before final output truncation.
+- What's still not tested: process cancellation after spawn starts, Windows `.cmd` shell invocation, stderr-only failures with very large output, and non-UTF8 output.
 - Files: `src/extension/dispatcher.ts`, `tests/dispatcher.test.ts`, `tests/smoke.test.ts`
 - Risk: Long or failed GSD commands can degrade Pi responsiveness or hide actionable diagnostics.
 - Priority: Medium
