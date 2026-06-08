@@ -7,33 +7,46 @@
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│                   Pi Extension Entry Layer                  │
-│              `src/extension/index.ts`                       │
-├──────────────────┬──────────────────┬───────────────────────┤
-│   Tool Schema    │   Core Register  │  Context Guard Hook   │
-│ `TOOL_PARAMS`    │ `registerPi...`  │ `registerContext...`  │
-│ `index.ts:14`    │ `register.ts`    │ `context-mode-guard.ts`│
-└────────┬─────────┴────────┬─────────┴──────────┬────────────┘
-         │                  │                     │
-         ▼                  ▼                     ▼
+│                 Pi Extension Runtime                         │
+│                 `src/extension/index.ts`                     │
+├──────────────────────┬──────────────────────────────────────┤
+│ `gsd` Pi tool         │ `/gsd-*` slash commands              │
+│ `src/extension/       │ `src/extension/register.ts`          │
+│  register.ts`         │                                      │
+└──────────┬────────────┴──────────────────┬───────────────────┘
+           │                               │
+           ▼                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                Pi Command and Tool Exposure                  │
-│         `src/extension/register.ts`                         │
-│  `gsd` tool + `/gsd-status`, `/gsd-doctor`, `/gsd-run`,      │
-│  `/gsd-model`, and dynamic `/gsd-*` upstream commands        │
-└────────┬─────────────────┬──────────────────────┬───────────┘
-         │                 │                      │
-         ▼                 ▼                      ▼
-┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐
-│ Dispatcher        │ │ Capability Model │ │ Model Routing     │
-│ `dispatcher.ts`   │ │ `capabilities.ts`│ │ `model-routing.ts`│
-└────────┬─────────┘ └────────┬─────────┘ └────────┬─────────┘
-         │                    │                    │
-         ▼                    ▼                    ▼
+│              Adapter / Coordination Layer                    │
+│ `src/extension/register.ts`                                  │
+│ - normalizes Pi tool and command calls                       │
+│ - resolves cwd and model routing context                     │
+│ - registers dynamic upstream GSD Core commands               │
+└──────────┬────────────────────┬──────────────────────────────┘
+           │                    │
+           ▼                    ▼
+┌────────────────────────────┐  ┌──────────────────────────────┐
+│ Dispatcher                  │  │ Guardrails / Routing          │
+│ `src/extension/             │  │ `src/extension/               │
+│  dispatcher.ts`             │  │  context-mode-guard.ts`       │
+│ - status/doctor/run         │  │ `src/extension/               │
+│ - package-local gsd-tools   │  │  model-routing.ts`            │
+└──────────┬─────────────────┘  └──────────────┬───────────────┘
+           │                                   │
+           ▼                                   ▼
 ┌─────────────────────────────────────────────────────────────┐
-│             Package-local Upstream GSD Core                  │
-│ `node_modules/@opengsd/gsd-core` + `.bin/gsd-tools`          │
-│ `src/extension/gsd-core-commands.ts` discovers command md    │
+│               Capability + Command Discovery                 │
+│ `src/extension/capabilities.ts`                              │
+│ `src/extension/gsd-core-commands.ts`                          │
+└──────────┬──────────────────────────────────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────────────────────────────────┐
+│        Package-Local Upstream GSD Core + Project State        │
+│ `node_modules/@opengsd/gsd-core`                              │
+│ `node_modules/.bin/gsd-tools`                                 │
+│ `.planning/`                                                  │
+│ optional `.pi-gsd/model-routing.json`                         │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -41,239 +54,248 @@
 
 | Component | Responsibility | File |
 |-----------|----------------|------|
-| Pi extension entry | Defines `gsd` tool parameters, adapts Pi's extension API, installs the GSD core registration and context-mode guard. | `src/extension/index.ts` |
-| Registration layer | Owns Pi-facing tool and slash-command registration, parameter parsing, CWD resolution, and handler wiring. | `src/extension/register.ts` |
-| Dispatcher | Implements `status`, `doctor`, `run`, and `resolve-model`; formats diagnostics; executes package-local `gsd-tools`. | `src/extension/dispatcher.ts` |
-| Capability detector | Detects package-local GSD Core, `gsd-tools`, `context-mode`, and `pi-subagents`; computes `inline`, `ctx-inline`, `delegated`, or `delegated-ctx` mode. | `src/extension/capabilities.ts` |
-| Upstream command discovery | Reads bundled upstream `@opengsd/gsd-core/commands/gsd/*.md`, derives slash names, and expands command prompts with argument substitution. | `src/extension/gsd-core-commands.ts` |
-| Model routing | Resolves Pi-native model and thinking guidance for GSD agents, skills, and commands from defaults plus `.pi-gsd/model-routing.json`. | `src/extension/model-routing.ts` |
-| Context-mode guard | Registers a `tool_call` hook that blocks or warns for unsafe context-mode use around `.planning/` and small source files. | `src/extension/context-mode-guard.ts` |
-| Package metadata | Exposes Pi extension resources, skill and prompt directories, public tool/command manifest, and dependency boundaries. | `package.json`, `extension-manifest.json` |
+| Extension entry point | Define the public `gsd` tool parameter schema, attach Pi output truncation, register the core adapter, and register the context-mode guard. | `src/extension/index.ts` |
+| Pi registration layer | Convert Pi tool calls and slash commands into dispatcher calls; register `/gsd-status`, `/gsd-doctor`, `/gsd-run`, `/gsd-model`, and dynamic upstream `/gsd-*` commands. | `src/extension/register.ts` |
+| Dispatcher | Implement `status`, `doctor`, `run`, and `resolve-model` as a thin boundary around package-local GSD Core and Pi execution. | `src/extension/dispatcher.ts` |
+| Capability detection | Detect package-local `@opengsd/gsd-core`, package-local `gsd-tools`, optional `context-mode`, and optional `pi-subagents`; compute `inline`, `ctx-inline`, `delegated`, or `delegated-ctx` mode. | `src/extension/capabilities.ts` |
+| GSD Core command discovery | Read upstream command markdown from `node_modules/@opengsd/gsd-core/commands/gsd`, parse frontmatter, and expand it into Pi user-message prompts. | `src/extension/gsd-core-commands.ts` |
+| Model routing | Resolve Pi-native model and thinking guidance from defaults, tier maps, optional `.pi-gsd/model-routing.json`, current Pi model, model registry, and session fallback choices. | `src/extension/model-routing.ts` |
+| Context-mode guard | Register a Pi `tool_call` hook that blocks accidental wholesale `.planning/` indexing and warns on low-value context-mode use for small durable files. | `src/extension/context-mode-guard.ts` |
+| Pi SDK ambient types | Declare the subset of Pi extension and AI APIs consumed by TypeScript source. | `src/types/pi-sdk.d.ts` |
+| Live smoke script | Start Pi in RPC mode and verify live extension registration without LLM keys. | `scripts/live-pi-rpc-smoke.mjs` |
+| Tests | Exercise each module through Node's built-in test runner with TypeScript stripping. | `tests/*.test.ts`, `tests/test-utils.ts` |
 
 ## Pattern Overview
 
-**Overall:** Thin adapter / anti-corruption layer around upstream GSD Core.
+**Overall:** Thin adapter / boundary layer around upstream GSD Core.
 
 **Key Characteristics:**
-- Keep GSD workflow semantics in package-local `@opengsd/gsd-core`; Pi-specific code only registers surfaces, detects capabilities, and dispatches to upstream seams (`docs/DESIGN.md`).
-- Use explicit boundaries: `registerPiGsdCore` handles Pi API exposure, `createGsdDispatcher` handles command execution, `detectCapabilities` handles mode discovery, and `resolveModelRouting` handles Pi model guidance.
-- Prefer runtime evidence over filesystem heuristics: `activeToolNames` from Pi tool inventory proves `context-mode` or `pi-subagents` is loaded before fallback path probes (`src/extension/capabilities.ts:102`).
-- Namespace everything as `gsd` or `gsd-*` to avoid generic Pi command collisions (`src/extension/register.ts:309`, `src/extension/register.ts:333`).
+- Keep GSD workflow semantics in upstream `@opengsd/gsd-core`; Pi-specific code lives under `src/extension/`.
+- Prefer explicit typed seams (`GsdDispatcher`, `RegisterablePiApi`, `Capabilities`, `ResolvedModelRouting`) over direct cross-module side effects.
+- Detect runtime integrations from active Pi tool inventory first, then from filesystem probes in `src/extension/capabilities.ts`.
+- Treat `.planning/` as canonical GSD project records and `.pi-gsd/model-routing.json` as optional wrapper-private model routing configuration.
+- Keep `context-mode` and `pi-subagents` optional Pi packages, not nested runtime dependencies of `pi-gsd`.
 
 ## Layers
 
-**Extension Bootstrap Layer:**
-- Purpose: Register this package with Pi and provide the public tool schema.
+**Pi Extension Surface:**
+- Purpose: Define what Pi loads and what the user can call.
 - Location: `src/extension/index.ts`
-- Contains: `TOOL_PARAMS`, `truncateForPiTool`, default `registerPiGsdExtension` export.
+- Contains: Typebox parameter schema, output truncation adapter, extension default export.
 - Depends on: `@earendil-works/pi-coding-agent`, `@earendil-works/pi-ai`, `typebox`, `src/extension/register.ts`, `src/extension/context-mode-guard.ts`.
-- Used by: Pi package loader configured in `package.json` under `pi.extensions`.
+- Used by: Pi through the `pi.extensions` entry in `package.json`.
 
-**Pi Surface Registration Layer:**
-- Purpose: Convert Pi tool and slash-command invocations into internal dispatcher calls or upstream prompt injection.
+**Registration and Command Layer:**
+- Purpose: Translate Pi tool/command invocations into adapter operations.
 - Location: `src/extension/register.ts`
-- Contains: `RegisterablePiApi`, `executeGsd`, `parseCommandArgs`, `commandHandler`, `gsdCoreCommandHandler`, `gsdModelCommandHandler`, `registerPiGsdCore`.
+- Contains: `registerPiGsdCore`, command handlers, argument parsing, active tool inventory collection, session model override tracking.
 - Depends on: `src/extension/dispatcher.ts`, `src/extension/capabilities.ts`, `src/extension/gsd-core-commands.ts`, `src/extension/model-routing.ts`.
 - Used by: `src/extension/index.ts` and tests in `tests/register.test.ts`.
 
-**Dispatcher Layer:**
-- Purpose: Provide a small execution abstraction for `status`, `doctor`, `run`, and `resolve-model` actions.
+**Dispatch Layer:**
+- Purpose: Centralize package-local GSD Core interaction and status/doctor formatting.
 - Location: `src/extension/dispatcher.ts`
-- Contains: `GsdDispatcher`, `createGsdDispatcher`, `formatCapabilities`, `formatDoctor`, `execWithNodeSpawn`, output truncation.
+- Contains: `createGsdDispatcher`, `resolveCwd`, output truncation, external GSD skill warning, Node spawn fallback.
 - Depends on: Node `child_process`, `fs`, `os`, `path`, `src/extension/capabilities.ts`, `src/extension/model-routing.ts`.
-- Used by: `src/extension/register.ts` and tests in `tests/dispatcher.test.ts`.
+- Used by: `src/extension/register.ts` and `tests/dispatcher.test.ts`.
 
-**Capability Detection Layer:**
-- Purpose: Compute integration capabilities and runtime mode without importing optional Pi packages.
-- Location: `src/extension/capabilities.ts`
-- Contains: `CapabilityName`, `GsdMode`, `Capabilities`, `detectCapabilities`, package-local and optional integration path candidates.
+**Discovery Layer:**
+- Purpose: Discover installed capabilities and upstream command definitions without duplicating GSD Core behavior.
+- Location: `src/extension/capabilities.ts`, `src/extension/gsd-core-commands.ts`
+- Contains: filesystem candidate construction, active tool signals, command markdown frontmatter parsing, `$ARGUMENTS` and `$1` expansion.
 - Depends on: Node `fs`, `os`, `path`, `url`.
-- Used by: `src/extension/register.ts`, `src/extension/dispatcher.ts`, and tests in `tests/capabilities.test.ts`.
+- Used by: `src/extension/dispatcher.ts`, `src/extension/register.ts`, `tests/capabilities.test.ts`, `tests/gsd-core-commands.test.ts`.
 
-**Upstream Command Exposure Layer:**
-- Purpose: Dynamically mirror upstream GSD Core command markdown into Pi slash commands without copying command bodies into this repository.
-- Location: `src/extension/gsd-core-commands.ts`
-- Contains: `GsdCoreCommand`, `discoverGsdCoreCommands`, `expandGsdCoreCommandPrompt`.
-- Depends on: Node `fs`, `path`, `defaultPackageRoot` from `src/extension/capabilities.ts`.
-- Used by: `registerPiGsdCore` in `src/extension/register.ts`.
+**Policy and Guardrails Layer:**
+- Purpose: Keep Pi-specific safety policies close to Pi integration points.
+- Location: `src/extension/context-mode-guard.ts`, `src/extension/model-routing.ts`
+- Contains: context-mode tool-call decisions, model tier defaults, `.pi-gsd/model-routing.json` loading, fallback handling, formatting for subagent consumers.
+- Depends on: Node `fs`, `path` and Pi context objects supplied through `RegisterablePiApi`/`GsdExecutionContext`.
+- Used by: `src/extension/index.ts`, `src/extension/register.ts`, `src/extension/dispatcher.ts`, `tests/context-mode-guard.test.ts`, `tests/model-routing.test.ts`.
 
-**Model Routing Layer:**
-- Purpose: Resolve Pi-native model IDs, thinking levels, fallback behavior, and subagent consumer guidance for GSD targets.
-- Location: `src/extension/model-routing.ts`
-- Contains: route types, default tier maps, config loading from `.pi-gsd/model-routing.json`, `resolveModelRouting`, `formatResolvedModelRouting`.
-- Depends on: Node `fs`, `path`.
-- Used by: `src/extension/dispatcher.ts` for `gsd` tool `resolve-model` and `src/extension/register.ts` for `/gsd-model`.
-
-**Guardrail Layer:**
-- Purpose: Enforce project-state and context-mode usage boundaries at Pi `tool_call` time.
-- Location: `src/extension/context-mode-guard.ts`
-- Contains: context-mode tool allowlist, `.planning/` path detection, latest-user-intent checks, `evaluateContextModeToolCall`, `registerContextModeGuard`.
-- Depends on: Node `fs`, `path`.
-- Used by: `src/extension/index.ts`; tests live in `tests/context-mode-guard.test.ts`.
+**Test Support Layer:**
+- Purpose: Isolate Pi runtime behavior behind deterministic fakes.
+- Location: `tests/test-utils.ts`
+- Contains: `capabilities()`, `mockPi()`, and `toolText()` helpers.
+- Depends on: public types from `src/extension/capabilities.ts`.
+- Used by: all `tests/*.test.ts` files.
 
 ## Data Flow
 
-### Primary `gsd` Tool Request Path
+### Pi Tool Request Path
 
-1. Pi loads `src/extension/index.ts` from `package.json` and calls default `registerPiGsdExtension` (`src/extension/index.ts:68`).
-2. `registerPiGsdExtension` passes TypeBox `TOOL_PARAMS` and truncation behavior into `registerPiGsdCore` (`src/extension/index.ts:69`).
-3. `registerPiGsdCore` builds a runtime-aware detector, discovers upstream GSD Core commands, creates the dispatcher, and registers the `gsd` tool (`src/extension/register.ts:288`, `src/extension/register.ts:297`, `src/extension/register.ts:300`, `src/extension/register.ts:309`).
-4. A `gsd` tool call invokes `executeGsd`, which resolves the action, CWD, args, and model context (`src/extension/register.ts:97`).
-5. `executeGsd` routes to `dispatcher.status`, `dispatcher.doctor`, `dispatcher.resolveModel`, or `dispatcher.run` based on `params.action` (`src/extension/register.ts:113`-`src/extension/register.ts:118`).
-6. The dispatcher detects capabilities for the request CWD and returns text plus `details.caps` (`src/extension/dispatcher.ts:250`-`src/extension/dispatcher.ts:287`).
-7. `toToolResult` wraps text as Pi tool content with capability details (`src/extension/register.ts:47`).
+1. Pi loads `src/extension/index.ts` from `package.json` and calls `registerPiGsdExtension(pi)` (`src/extension/index.ts:58`).
+2. `registerPiGsdExtension` calls `registerPiGsdCore` with the Typebox `TOOL_PARAMS` schema and `truncateForPiTool` (`src/extension/index.ts:59`).
+3. `registerPiGsdCore` creates a runtime-aware capability detector, discovers upstream GSD Core commands, creates a dispatcher, and registers the `gsd` tool (`src/extension/register.ts:301`).
+4. A `gsd` tool call enters the registered `execute` callback and calls `executeGsd` (`src/extension/register.ts:337`).
+5. `executeGsd` resolves the cwd with `resolveCwd`, builds model routing context, and dispatches by `action` to `status`, `doctor`, `resolveModel`, or `run` (`src/extension/register.ts:80`).
+6. `createGsdDispatcher` formats status/doctor output, resolves model routing, or runs package-local `gsd-tools` via `pi.exec` or Node spawn (`src/extension/dispatcher.ts:271`).
+7. The result returns as Pi text content with capability details attached (`src/extension/register.ts:28`).
 
-### `/gsd-run` Slash Command Flow
+### Slash Command Path
 
-1. `registerPiGsdCore` registers `/gsd-run` with `commandHandler(dispatcher, "run", ...)` (`src/extension/register.ts:343`).
-2. `commandHandler` shell-parses the raw string only for `run` actions using `parseCommandArgs` (`src/extension/register.ts:162`, `src/extension/register.ts:172`).
-3. `executeGsd` calls `dispatcher.run(args, cwd, signal)` (`src/extension/register.ts:118`).
-4. `createGsdDispatcher.run` refuses execution when package-local `gsd-tools` is missing (`src/extension/dispatcher.ts:287`).
-5. When available, `run` uses Pi `exec` or the Node `spawn` fallback and truncates formatted output (`src/extension/dispatcher.ts:287`, `src/extension/dispatcher.ts:221`).
+1. `registerPiGsdCore` registers fixed commands `/gsd-status`, `/gsd-doctor`, `/gsd-run`, and `/gsd-model` (`src/extension/register.ts:343`).
+2. `/gsd-run <args>` uses `parseCommandArgs` to preserve quoted and escaped CLI arguments before calling dispatcher `run` (`src/extension/register.ts:105`).
+3. `/gsd-model [agent|skill|command] <target>` parses target text with `parseGsdModelTarget`, resolves route with `resolveModelRouting`, optionally switches Pi model via `pi.setModel`, and applies thinking via `pi.setThinkingLevel` (`src/extension/register.ts:182`).
+4. Dynamic upstream commands are registered from `GsdCoreCommand[]` and send an expanded upstream command prompt back to Pi through `pi.sendUserMessage` (`src/extension/register.ts:278`).
 
-### Dynamic Upstream Slash Command Flow
+### Dynamic Upstream Command Flow
 
-1. `discoverGsdCoreCommands` reads package-local upstream command markdown from `node_modules/@opengsd/gsd-core/commands/gsd` (`src/extension/gsd-core-commands.ts:51`).
-2. Each markdown file's frontmatter supplies `name`, `description`, and `argument-hint`; file names fill missing core names (`src/extension/gsd-core-commands.ts:16`).
-3. `registerPiGsdCore` registers every discovered command as `command.slashName` (`src/extension/register.ts:354`).
-4. `gsdCoreCommandHandler` verifies `pi.sendUserMessage` exists and the session is idle when an idle check is available (`src/extension/register.ts:225`).
-5. `expandGsdCoreCommandPrompt` substitutes `$ARGUMENTS`, `$@`, `$1`, `$2`, and package-local GSD Core paths, then the handler injects the prompt into Pi via `sendUserMessage` (`src/extension/gsd-core-commands.ts:117`, `src/extension/register.ts:239`).
+1. `discoverGsdCoreCommands` locates `node_modules/@opengsd/gsd-core/commands/gsd` using `gsdCoreCommandsDir` (`src/extension/gsd-core-commands.ts:53`).
+2. It reads `*.md` command files, parses `name`, `description`, and `argument-hint` frontmatter, and converts each to a namespaced slash command such as `/gsd-plan-phase` (`src/extension/gsd-core-commands.ts:58`).
+3. The command handler calls `expandGsdCoreCommandPrompt`, replacing `$ARGUMENTS`, `$@`, `$1`, and `@~/.claude/gsd-core/` references with package-local paths (`src/extension/gsd-core-commands.ts:113`).
+4. The expanded prompt is delivered through `pi.sendUserMessage`; `pi-gsd` does not execute or reinterpret upstream command semantics (`src/extension/register.ts:170`).
 
 ### Capability Detection Flow
 
-1. `createRuntimeAwareDetector` requests active Pi tool names through `pi.getAllTools` (`src/extension/register.ts:80`).
-2. `detectCapabilities` builds package-local and optional integration candidate paths (`src/extension/capabilities.ts:65`, `src/extension/capabilities.ts:102`).
-3. Active tools `subagent` and `ctx_execute`/`ctx_*` take precedence over filesystem probes (`src/extension/capabilities.ts:119`).
-4. Detected optional integrations determine mode: `inline`, `ctx-inline`, `delegated`, or `delegated-ctx` (`src/extension/capabilities.ts:135`).
-5. Dispatcher status and doctor include these capabilities in user-visible diagnostics (`src/extension/dispatcher.ts:130`, `src/extension/dispatcher.ts:171`).
+1. `createRuntimeAwareDetector` collects active Pi tool names with `pi.getAllTools` (`src/extension/register.ts:62`).
+2. `detectCapabilities` checks active tool names for `subagent` and `ctx_*` before using filesystem candidates (`src/extension/capabilities.ts:112`).
+3. Package-local GSD Core and `gsd-tools` candidates are resolved under the extension package root (`src/extension/capabilities.ts:50`).
+4. Optional integration candidates check project-local and global Pi package/extension directories (`src/extension/capabilities.ts:61`).
+5. The resulting `Capabilities.mode` is one of `inline`, `ctx-inline`, `delegated`, or `delegated-ctx` (`src/extension/capabilities.ts:133`).
+
+### Context-Mode Guard Flow
+
+1. `registerPiGsdExtension` registers the guard on the Pi `tool_call` event (`src/extension/index.ts:63`).
+2. `evaluateContextModeToolCall` allows high-value context-mode tools such as `ctx_execute`, `ctx_batch_execute`, `ctx_fetch_and_index`, `ctx_search`, and diagnostics (`src/extension/context-mode-guard.ts:28`).
+3. For `ctx_index`, planning-root paths are blocked unless the latest user message explicitly asks to index `.planning/`; individual planning artifacts warn but proceed (`src/extension/context-mode-guard.ts:147`).
+4. For `ctx_execute_file`, small source/planning files warn unless the user explicitly requested computed extraction or the path is bulky/transient (`src/extension/context-mode-guard.ts:186`).
+5. Blocking decisions return `{ block: true, reason }`; warnings notify UI when available (`src/extension/context-mode-guard.ts:223`).
 
 ### Model Routing Flow
 
-1. A `gsd` tool call with `action: "resolve-model"` reaches `dispatcher.resolveModel` (`src/extension/dispatcher.ts:278`).
-2. `/gsd-model` parses optional `agent`, `skill`, or `command` target selectors and calls `resolveModelRouting` directly (`src/extension/register.ts:181`, `src/extension/register.ts:243`).
-3. `resolveModelRouting` loads `.pi-gsd/model-routing.json` if present and merges defaults, tier routes, explicit target routes, and session overrides (`src/extension/model-routing.ts:215`, `src/extension/model-routing.ts:311`).
-4. The result includes recommended action and a `subagent` block; `/gsd-model` may apply a model or thinking level via Pi APIs (`src/extension/register.ts:249`, `src/extension/register.ts:270`).
+1. Model routing requests enter through `gsd` action `resolve-model`, `/gsd-model`, or dispatcher `resolveModel` (`src/extension/register.ts:88`, `src/extension/dispatcher.ts:298`).
+2. `resolveModelRouting` loads `.pi-gsd/model-routing.json` when present and merges it with `DEFAULT_CONFIG` (`src/extension/model-routing.ts:202`).
+3. Target type is inferred as agent, skill, or command; known GSD targets map to heavy, standard, or light tiers (`src/extension/model-routing.ts:274`).
+4. Route precedence is default route, tier route, explicit target route, then session override from `/gsd-model` fallback choice (`src/extension/model-routing.ts:320`).
+5. The resolved result includes a Pi action recommendation and a `subagent` consumer block; pass `subagent.model` only when populated (`src/extension/model-routing.ts:367`).
 
 **State Management:**
-- Durable GSD project records belong in `.planning/`; `src/extension/dispatcher.ts:130` reports whether `.planning/` exists but Pi-specific adapter state does not live there.
-- Optional adapter-private model routing uses `.pi-gsd/model-routing.json` through `src/extension/model-routing.ts:215`.
-- Session-only fallback selections for `/gsd-model` live in an in-memory `Map<string, string>` inside `registerPiGsdCore` (`src/extension/register.ts:294`).
-- No global mutable singleton controls dispatcher state; most behavior is created per Pi extension registration via dependency injection options in `registerPiGsdCore` and `createGsdDispatcher`.
+- Durable project records live in `.planning/`; `src/extension/context-mode-guard.ts` protects this boundary from accidental wholesale indexing.
+- Wrapper-private, project-local model routing lives in optional `.pi-gsd/model-routing.json`, read by `src/extension/model-routing.ts`.
+- Session-only model fallback choices live in the `sessionModelOverrides` `Map` inside `registerPiGsdCore` (`src/extension/register.ts:301`).
+- Capability status is recomputed per cwd through `detect(cwd)` rather than stored globally (`src/extension/dispatcher.ts:259`).
+- Output retention for spawned processes is bounded by `StreamingTextTail` before final truncation (`src/extension/dispatcher.ts:181`).
 
 ## Key Abstractions
 
 **`RegisterablePiApi`:**
-- Purpose: Minimal Pi API surface this adapter needs for tools, commands, model switching, thinking level, prompt injection, and execution.
-- Examples: `src/extension/register.ts:31`, `tests/test-utils.ts`.
-- Pattern: Narrow adapter interface for testability and Pi SDK decoupling.
+- Purpose: Minimal Pi API surface the extension needs.
+- Examples: `src/extension/register.ts`, `src/types/pi-sdk.d.ts`, `tests/test-utils.ts`.
+- Pattern: Structural typing keeps tests and runtime integration independent of the full Pi SDK.
 
 **`GsdDispatcher`:**
-- Purpose: Stable boundary between Pi handlers and upstream GSD execution/diagnostics.
-- Examples: `src/extension/dispatcher.ts:56`, `src/extension/register.ts:300`.
-- Pattern: Dependency-injected service object with `status`, `doctor`, `run`, and `resolveModel` methods.
+- Purpose: Stable adapter seam for status, doctor, run, and model resolution.
+- Examples: `src/extension/dispatcher.ts`, `src/extension/register.ts`, `tests/dispatcher.test.ts`.
+- Pattern: Dependency-injected `exec`, `detect`, `exists`, `truncateOutput`, and `externalGsdSkillPaths` make runtime behavior testable.
 
 **`Capabilities`:**
-- Purpose: Single shape for package-local GSD Core availability and optional Pi accelerator availability.
-- Examples: `src/extension/capabilities.ts:13`, `src/extension/dispatcher.ts:130`.
-- Pattern: Pure detection function returning data; formatting happens in dispatcher.
+- Purpose: Represent available upstream and optional Pi integrations.
+- Examples: `src/extension/capabilities.ts`, `src/extension/dispatcher.ts`, `tests/test-utils.ts`.
+- Pattern: Booleans plus path metadata and derived `GsdMode` communicate both detection and source.
 
 **`GsdCoreCommand`:**
-- Purpose: Parsed representation of an upstream markdown command ready for Pi slash-command registration.
-- Examples: `src/extension/gsd-core-commands.ts:4`, `src/extension/register.ts:354`.
-- Pattern: Runtime discovery from installed upstream package.
+- Purpose: Normalize upstream GSD command markdown into Pi slash command registrations.
+- Examples: `src/extension/gsd-core-commands.ts`, `src/extension/register.ts`, `tests/gsd-core-commands.test.ts`.
+- Pattern: Frontmatter-driven discovery avoids vendoring or duplicating command text.
 
 **`ResolvedModelRouting`:**
-- Purpose: Complete model/thinking resolution result for GSD agents, skills, or commands, including subagent guidance.
-- Examples: `src/extension/model-routing.ts:40`, `src/extension/dispatcher.ts:278`.
-- Pattern: Config merge + availability check + formatted recommendation.
+- Purpose: Give Pi-native model/thinking guidance and subagent delegation hints without forcing upstream GSD model IDs.
+- Examples: `src/extension/model-routing.ts`, `src/extension/register.ts`, `tests/model-routing.test.ts`.
+- Pattern: Merge defaults, tiers, explicit config, current Pi model, available model registry, and fallback policy into one formatted decision.
 
 **`GuardDecision`:**
-- Purpose: Normalize context-mode guard outcomes as allow, warn, or block.
-- Examples: `src/extension/context-mode-guard.ts:26`, `src/extension/context-mode-guard.ts:164`.
-- Pattern: Pure policy function plus side-effecting Pi hook registration.
+- Purpose: Return allow/warn/block decisions for context-mode tool calls.
+- Examples: `src/extension/context-mode-guard.ts`, `tests/context-mode-guard.test.ts`.
+- Pattern: Pure evaluation function plus thin event registration keeps guard logic testable.
 
 ## Entry Points
 
-**Pi Package Extension:**
+**Pi extension registration:**
 - Location: `src/extension/index.ts`
-- Triggers: Pi loads the extension listed in `package.json` under `pi.extensions`.
-- Responsibilities: Register the tool/commands and context-mode guard.
+- Triggers: Pi loads the `pi.extensions` entry declared in `package.json`.
+- Responsibilities: Build schema, wire output truncation, register core adapter, register context-mode guard.
 
-**Public `gsd` Tool:**
-- Location: `src/extension/register.ts:309`
-- Triggers: Pi tool calls with action `status`, `doctor`, `run`, or `resolve-model`.
-- Responsibilities: Provide agent-facing access to upstream GSD Core diagnostics, execution, and model routing.
+**Public `gsd` tool:**
+- Location: `src/extension/register.ts`
+- Triggers: Pi tool call with `action` `status`, `doctor`, `run`, or `resolve-model`.
+- Responsibilities: Resolve cwd and model context; delegate to `GsdDispatcher`; return text and `details.caps`.
 
-**Core Slash Commands:**
-- Location: `src/extension/register.ts:333`-`src/extension/register.ts:358`
-- Triggers: Pi slash commands `/gsd-status`, `/gsd-doctor`, `/gsd-run`, `/gsd-model`, or dynamic `/gsd-*` commands.
-- Responsibilities: Expose named command UX without duplicating upstream GSD workflow text.
+**Fixed slash commands:**
+- Location: `src/extension/register.ts`
+- Triggers: `/gsd-status`, `/gsd-doctor`, `/gsd-run`, `/gsd-model`.
+- Responsibilities: Expose common wrapper operations without duplicating upstream GSD command semantics.
 
-**Context-mode Guard Hook:**
-- Location: `src/extension/context-mode-guard.ts:226`
-- Triggers: Pi `tool_call` events.
-- Responsibilities: Block accidental wholesale `.planning/` indexing and warn for risky context-mode usage.
+**Dynamic upstream slash commands:**
+- Location: `src/extension/register.ts`, `src/extension/gsd-core-commands.ts`
+- Triggers: `/gsd-*` commands discovered from package-local `@opengsd/gsd-core` markdown.
+- Responsibilities: Expand upstream command prompts and send them back into Pi via `pi.sendUserMessage`.
+
+**Live Pi smoke check:**
+- Location: `scripts/live-pi-rpc-smoke.mjs`
+- Triggers: `npm run test:live-pi`.
+- Responsibilities: Validate extension command registration in a live Pi RPC process.
 
 ## Architectural Constraints
 
-- **Threading:** Node single-threaded event loop. `dispatcher.run` starts a child process for package-local `gsd-tools` when Pi `exec` is unavailable (`src/extension/dispatcher.ts:215`).
-- **Global state:** Avoid module-level mutable state for runtime behavior. Per-registration mutable session model overrides are local to `registerPiGsdCore` (`src/extension/register.ts:294`).
-- **Circular imports:** Keep directional imports: `index.ts` → `register.ts`/`context-mode-guard.ts`; `register.ts` → dispatcher/capabilities/command discovery/model routing; `dispatcher.ts` → capabilities/model routing. Do not import `register.ts` from these lower layers.
-- **Upstream boundary:** Do not copy GSD command bodies or workflow semantics into `pi-gsd`; discover from package-local `@opengsd/gsd-core` via `src/extension/gsd-core-commands.ts`.
-- **Package-local execution:** Do not fall back to a system-wide `gsd-tools`; `dispatcher.run` requires the package-local binary path from capabilities (`src/extension/dispatcher.ts:296`).
-- **Optional integrations:** Do not import or depend on `context-mode` or `pi-subagents`; detect active public tools or Pi package paths in `src/extension/capabilities.ts`.
-- **Command namespace:** Add Pi commands under the `gsd-*` namespace only, matching `extension-manifest.json`.
+- **Threading:** Runtime code is single-process Node.js/TypeScript; external `gsd-tools` execution uses `pi.exec` when available or `child_process.spawn` in `src/extension/dispatcher.ts`.
+- **Global state:** No cross-session global mutable state is used. Session fallback model choices are held in a `Map` scoped to one `registerPiGsdCore` invocation in `src/extension/register.ts`.
+- **Circular imports:** Source imports are acyclic: `index.ts` imports `register.ts` and `context-mode-guard.ts`; `register.ts` imports dispatcher/discovery/routing; dispatcher imports capabilities/routing; no module imports `index.ts`.
+- **Package-local execution:** Always resolve `@opengsd/gsd-core` and `gsd-tools` from the package root in `src/extension/capabilities.ts` and `src/extension/dispatcher.ts`; do not call a system-wide `gsd-tools` binary.
+- **State boundary:** Store normal GSD artifacts in `.planning/`; keep Pi-wrapper-specific config in `.pi-gsd/model-routing.json`; do not create `.gsd/`.
+- **Optional integrations:** `context-mode` and `pi-subagents` are detected capabilities, not dependencies to import from source code.
+- **Output bounds:** Preserve bounded output from external processes with `StreamingTextTail` and final truncation in `src/extension/dispatcher.ts` and `src/extension/index.ts`.
+- **Runtime compatibility:** Use explicit `.ts` relative imports throughout `src/extension/*.ts` because Node's strip-types test/runtime path executes TypeScript source directly.
 
 ## Anti-Patterns
 
-### Reimplementing GSD Workflow Semantics in Pi Code
+### Reimplementing GSD Core Semantics
 
-**What happens:** Command bodies, phase logic, artifact schemas, or lifecycle rules are added under `src/extension/`.
-**Why it's wrong:** This package is a thin adapter; duplicated semantics drift from `@opengsd/gsd-core` and can break `.planning/` interoperability.
-**Do this instead:** Add Pi registration or dispatch seams in `src/extension/register.ts` and keep workflow behavior in upstream command markdown discovered by `src/extension/gsd-core-commands.ts`.
+**What happens:** Adding phase lifecycle, artifact naming, or command behavior directly in `src/extension/register.ts` or `src/extension/dispatcher.ts` duplicates upstream GSD Core.
+**Why it's wrong:** `docs/DESIGN.md` defines `pi-gsd` as a thin adapter; duplicated semantics drift from package-local `@opengsd/gsd-core` and break cross-runtime interoperability.
+**Do this instead:** Discover upstream command markdown with `src/extension/gsd-core-commands.ts` or dispatch to package-local `gsd-tools` through `src/extension/dispatcher.ts`.
 
-### Bypassing Capability Detection
+### Using System-Wide GSD Tools
 
-**What happens:** Code assumes `context-mode`, `pi-subagents`, or `gsd-tools` exists because files appear under `node_modules`.
-**Why it's wrong:** Optional Pi integrations must be loaded by Pi to expose tools and hooks; a nested package install is not enough.
-**Do this instead:** Route availability through `detectCapabilities` in `src/extension/capabilities.ts` and prefer `activeToolNames` from `pi.getAllTools` in `src/extension/register.ts`.
+**What happens:** Calling `gsd-tools` from `PATH` or a global install bypasses `node_modules/@opengsd/gsd-core`.
+**Why it's wrong:** A system binary can be a different GSD Core version and produce incompatible `.planning/` artifacts.
+**Do this instead:** Use `detectCapabilities` in `src/extension/capabilities.ts` to resolve `node_modules/.bin/gsd-tools`, and let `createGsdDispatcher` refuse to run when package-local tools are missing (`src/extension/dispatcher.ts`).
 
-### Dispatching to System-Wide `gsd-tools`
+### Treating Optional Pi Packages as Importable Dependencies
 
-**What happens:** A PATH lookup or shell command uses whatever `gsd-tools` is globally installed.
-**Why it's wrong:** A different GSD version can create incompatible artifacts or behavior.
-**Do this instead:** Use `createGsdDispatcher` in `src/extension/dispatcher.ts`, which resolves package-local `@opengsd/gsd-core` and refuses to run when package-local `gsd-tools` is missing.
+**What happens:** Importing `context-mode` or `pi-subagents` from source code assumes nested npm installation is enough.
+**Why it's wrong:** These are Pi packages with tools, hooks, skills, and prompts that must be loaded by Pi; files on disk alone do not prove runtime availability.
+**Do this instead:** Detect active tool names with `pi.getAllTools` in `src/extension/register.ts` and filesystem candidates only as fallback in `src/extension/capabilities.ts`.
 
-### Storing Adapter State in `.planning/`
+### Storing Wrapper Internals in `.planning/`
 
-**What happens:** Pi-specific caches, model routing, or integration metadata are written to `.planning/`.
-**Why it's wrong:** `.planning/` is durable GSD project state shared with other GSD runtimes; adapter-private data pollutes canonical records.
-**Do this instead:** Use `.pi-gsd/model-routing.json` for explicit adapter-private routing config through `src/extension/model-routing.ts`.
+**What happens:** Writing Pi adapter config, caches, or private state into `.planning/` mixes wrapper state with GSD project records.
+**Why it's wrong:** `.planning/` is the canonical GSD record directory consumed by other GSD-compatible tools and runtimes.
+**Do this instead:** Put wrapper-private model routing in optional `.pi-gsd/model-routing.json` as read by `src/extension/model-routing.ts`; keep durable GSD artifacts in `.planning/` only when they follow GSD-compatible conventions.
 
 ## Error Handling
 
-**Strategy:** Prefer non-throwing diagnostics and clear user-facing text for missing optional capabilities or runtime APIs; reserve thrown exceptions for unexpected filesystem/process failures handled by tests.
+**Strategy:** Prefer conservative fallback and explicit diagnostics over throwing across Pi boundaries.
 
 **Patterns:**
-- Capability and config reads catch filesystem/JSON failures and return defaults plus warnings (`src/extension/model-routing.ts:218`).
-- Dynamic command dispatch returns a text error when `pi.sendUserMessage` is unavailable (`src/extension/register.ts:230`).
-- `dispatcher.run` returns a text error when package-local `gsd-tools` is missing instead of falling back to PATH (`src/extension/dispatcher.ts:296`).
-- Child-process cancellation returns exit code `130` style text when the AbortSignal fires (`src/extension/dispatcher.ts:235`).
-- Output truncation is centralized in `src/extension/dispatcher.ts:76` and the Pi-specific truncator in `src/extension/index.ts:48`.
+- Capability detection wraps filesystem reads in safe checks and returns null paths for missing integrations (`src/extension/capabilities.ts`).
+- `activeToolNames` catches `pi.getAllTools` errors and treats unavailable inventory as empty (`src/extension/register.ts`).
+- Dispatcher `run` refuses to execute when package-local `gsd-tools` is missing and returns guidance text instead of falling back to `PATH` (`src/extension/dispatcher.ts`).
+- Node spawn resolves aborts as exit code `130` with retained output instead of rejecting the entire tool call (`src/extension/dispatcher.ts`).
+- Model config loading catches JSON/read errors, records warnings, and uses defaults (`src/extension/model-routing.ts`).
+- Context-mode guard blocks only high-risk accidental `.planning/` indexing and otherwise warns or allows (`src/extension/context-mode-guard.ts`).
 
 ## Cross-Cutting Concerns
 
-**Logging:** No structured logging framework is present. Runtime feedback uses returned text for tool/command results and `ctx.ui.notify` only for guard warnings/blocks in `src/extension/context-mode-guard.ts:226`.
+**Logging:** No dedicated logging framework is used in source. User-facing diagnostics are formatted as tool/command text in `src/extension/dispatcher.ts`, `src/extension/model-routing.ts`, and guard UI notifications in `src/extension/context-mode-guard.ts`.
 
-**Validation:** Public `gsd` tool parameters use TypeBox and `StringEnum` in `src/extension/index.ts:14`. Internal parsers normalize command arguments, frontmatter, model routing config, and target selectors in `src/extension/register.ts`, `src/extension/gsd-core-commands.ts`, and `src/extension/model-routing.ts`.
+**Validation:** Tool input schema is Typebox in `src/extension/index.ts`. Runtime target/config normalization is implemented in `src/extension/model-routing.ts`. Command args are shell-word parsed in `src/extension/register.ts` and `src/extension/gsd-core-commands.ts`.
 
-**Authentication:** No application authentication layer exists. External service access is delegated to Pi runtime APIs, installed Pi packages, and package-local `gsd-tools` execution.
+**Authentication:** The extension does not handle secrets or credentials. Model availability and switching are delegated to Pi's `modelRegistry` and `setModel` APIs in `src/extension/register.ts`. External GSD commands run through package-local `gsd-tools` without reading `.env` files.
 
-**Command/tool registration:** `src/extension/register.ts` is the single place to register `gsd` tool and `gsd-*` commands. `extension-manifest.json` advertises the same public surface for package metadata.
+**Security:** The primary security boundary is avoiding secret reads and avoiding accidental context-mode indexing of `.planning/`. `src/extension/context-mode-guard.ts` inspects paths, symlink-resolved paths, and latest user intent before blocking or warning.
 
-**Capability detection:** Use `src/extension/capabilities.ts` for all mode decisions. Status and doctor output in `src/extension/dispatcher.ts` are the user-visible representation of capability state.
-
-**Command exposure:** Dynamic upstream slash commands come from `src/extension/gsd-core-commands.ts`; static integration commands are explicitly listed in `src/extension/register.ts` and `extension-manifest.json`.
+**Testing:** Module-level behavior is covered by Node test files in `tests/*.test.ts`, with deterministic fakes in `tests/test-utils.ts` and live runtime coverage in `scripts/live-pi-rpc-smoke.mjs`.
 
 ---
 

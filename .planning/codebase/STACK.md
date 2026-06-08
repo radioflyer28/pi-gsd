@@ -5,98 +5,80 @@
 ## Languages
 
 **Primary:**
-- TypeScript ES2022 - extension source under `src/extension/*.ts`, ambient Pi SDK declarations in `src/types/pi-sdk.d.ts`, and Node test files in `tests/*.test.ts`.
+- TypeScript 6.0.3 - Extension implementation in `src/extension/*.ts` and Pi SDK ambient types in `src/types/pi-sdk.d.ts`; configured by `tsconfig.json` with `strict: true`, `module: "NodeNext"`, and `target: "ES2022"`.
+- JavaScript (ES modules) - Live Pi RPC smoke script in `scripts/live-pi-rpc-smoke.mjs`.
 
 **Secondary:**
-- JSON - package metadata in `package.json`, lockfile in `package-lock.json`, TypeScript compiler settings in `tsconfig.json`, Pi package metadata in `extension-manifest.json`, and local Pi package registration in `.pi/settings.json`.
-- Markdown - user/maintainer documentation in `README.md`, `docs/DESIGN.md`, `docs/USAGE.md`, prompt content in `prompts/gsd-review-loop.md`, and the package skill in `skills/pi-gsd/SKILL.md`.
+- Markdown - Pi skill, prompts, and documentation in `skills/pi-gsd/SKILL.md`, `prompts/gsd-review-loop.md`, `README.md`, `docs/DESIGN.md`, and `docs/USAGE.md`.
+- YAML - GitHub Actions CI workflow in `.github/workflows/ci.yml`.
 
 ## Runtime
 
 **Environment:**
-- Node.js >=22.0.0 - required by `package.json` `engines.node`; tests run through Node's built-in test runner with `--experimental-strip-types`.
-- ECMAScript modules - `package.json` sets `"type": "module"`; source imports use explicit `.ts` extensions, enabled by `tsconfig.json` `allowImportingTsExtensions`.
-- Pi platform >=2.29.0 - declared in `extension-manifest.json` under `requires.platform`.
+- Node.js >=22.0.0 - Required by `package.json` `engines.node`; CI uses Node 22 in `.github/workflows/ci.yml`.
+- Pi platform >=2.29.0 - Required by `extension-manifest.json`; this package registers a Pi extension entry point at `src/extension/index.ts`.
 
 **Package Manager:**
-- npm - `package-lock.json` lockfile version 3 is present.
-- Lockfile: present at `package-lock.json`; installed package versions include `@opengsd/gsd-core` 1.3.1, `typescript` 6.0.3, and `@types/node` 24.12.4.
+- npm - Scripts and lockfile are npm-based in `package.json` and `package-lock.json`.
+- Lockfile: present at `package-lock.json` with lockfileVersion 3.
 
 ## Frameworks
 
 **Core:**
-- Pi coding-agent extension API - `src/extension/index.ts` exports the default Pi extension registration function and imports `ExtensionAPI`, truncation helpers, and command/tool registration surfaces from `@earendil-works/pi-coding-agent`.
-- Upstream GSD Core - `@opengsd/gsd-core` is a regular dependency in `package.json`; command discovery reads package-local markdown command prompts from `node_modules/@opengsd/gsd-core/commands/gsd` via `src/extension/gsd-core-commands.ts`.
-- Node standard library - `src/extension/capabilities.ts`, `src/extension/dispatcher.ts`, `src/extension/gsd-core-commands.ts`, `src/extension/context-mode-guard.ts`, and `src/extension/model-routing.ts` use `node:fs`, `node:path`, `node:os`, `node:url`, and `node:child_process`.
+- Pi Coding Agent SDK `@earendil-works/pi-coding-agent` 0.78.1 (peer dependency, installed in lockfile) - Pi extension API, tool registration, command registration, output truncation helpers; imported in `src/extension/index.ts`.
+- Pi AI SDK `@earendil-works/pi-ai` 0.78.1 (peer dependency, installed in lockfile) - `StringEnum` schema helper used for the `gsd` tool action enum in `src/extension/index.ts`.
+- TypeBox `typebox` 1.2.2 (peer dependency, installed in lockfile) - Runtime parameter schema construction in `src/extension/index.ts`.
+- Upstream GSD Core `@opengsd/gsd-core` 1.3.1 (dependency, declared as `>=1.3.0`) - Provides package-local `gsd-tools` and dynamic GSD Core command markdown consumed by `src/extension/dispatcher.ts` and `src/extension/gsd-core-commands.ts`.
 
 **Testing:**
-- Node test runner - `package.json` `test` script runs `node --experimental-strip-types --test tests/*.test.ts`.
-- Node `assert/strict` - used by `tests/capabilities.test.ts`, `tests/context-mode-guard.test.ts`, `tests/dispatcher.test.ts`, `tests/metadata.test.ts`, `tests/register.test.ts`, and `tests/smoke.test.ts`.
+- Node built-in test runner - Test command is `node --experimental-strip-types --test tests/*.test.ts` in `package.json`; tests live in `tests/*.test.ts`.
+- Node assert module - Assertions use `node:assert/strict` in tests such as `tests/register.test.ts`, `tests/dispatcher.test.ts`, and `tests/capabilities.test.ts`.
 
 **Build/Dev:**
-- TypeScript 6.0.3 - `package.json` scripts use `tsc --noEmit` and `tsc -p tsconfig.json`; `tsconfig.json` sets strict `NodeNext` compilation with `noEmit`.
-- typebox - peer dependency used in `src/extension/index.ts` to define the `gsd` tool parameter schema.
-- `@earendil-works/pi-ai` - peer dependency used in `src/extension/index.ts` for `StringEnum` schema construction.
+- TypeScript compiler 6.0.3 - `npm run typecheck` executes `tsc --noEmit`; `npm run build` executes `tsc -p tsconfig.json`. Current `tsconfig.json` has `noEmit: true`, so the build is a validation build rather than an artifact-emitting build.
+- Node `--experimental-strip-types` - Allows the Node test runner to execute TypeScript test files directly without a separate test transpiler.
+- Pi CLI - Optional live smoke test in `scripts/live-pi-rpc-smoke.mjs` starts `pi --mode rpc` and loads `./src/extension/index.ts`.
 
 ## Key Dependencies
 
 **Critical:**
-- `@opengsd/gsd-core` >=1.3.0 (`package-lock.json`: 1.3.1) - authoritative GSD workflow source; `src/extension/dispatcher.ts` invokes its package-local `gsd-tools` binary and `src/extension/gsd-core-commands.ts` dynamically exposes its command prompts.
-- `@earendil-works/pi-coding-agent` * (peer) - provides the Pi extension API, tool/command registration, `pi.exec`, model/thinking APIs, active tool inventory, UI hooks, and truncation utilities used by `src/extension/index.ts` and `src/extension/register.ts`.
-- `@earendil-works/pi-ai` * (peer) - provides `StringEnum` for runtime tool parameter validation in `src/extension/index.ts`.
-- `typebox` * (peer) - provides `Type.Object`, `Type.Array`, `Type.String`, and `Type.Optional` in `src/extension/index.ts`.
+- `@opengsd/gsd-core` >=1.3.0 / installed 1.3.1 - The adapter must use its package-local GSD Core copy. `src/extension/capabilities.ts` probes `node_modules/@opengsd/gsd-core/package.json` and `node_modules/.bin/gsd-tools*`; `src/extension/dispatcher.ts` refuses system-wide `gsd-tools` fallback.
+- `@earendil-works/pi-coding-agent` * / installed 0.78.1 - Provides the Pi extension contract used by `src/extension/index.ts` and the runtime methods modeled in `src/extension/register.ts`.
+- `@earendil-works/pi-ai` * / installed 0.78.1 - Provides `StringEnum` used in the public `gsd` tool schema in `src/extension/index.ts`.
+- `typebox` * / installed 1.2.2 - Builds the public JSON schema for Pi tool parameters in `src/extension/index.ts`.
 
 **Infrastructure:**
-- `typescript` ^6.0.3 - static validation and build command driver.
-- `@types/node` ^24.10.0 - Node type declarations for standard-library imports and test files.
-- Node built-ins (`fs`, `path`, `os`, `url`, `child_process`, `node:test`, `assert/strict`) - no Jest/Vitest dependency is present.
+- `typescript` ^6.0.3 / installed 6.0.3 - Static type checking for `src/**/*.ts`.
+- `@types/node` ^24.10.0 / installed 24.12.4 - Node types for filesystem, process, child process, paths, and test-time utilities used across `src/extension/*.ts`, `scripts/live-pi-rpc-smoke.mjs`, and `tests/*.test.ts`.
+- Node built-in modules - `node:fs`, `node:path`, `node:os`, `node:url`, `node:child_process`, `node:events`, `node:test`, and `node:assert/strict` are used throughout `src/extension/*.ts`, `scripts/live-pi-rpc-smoke.mjs`, and `tests/*.test.ts`.
 
 ## Configuration
 
 **Environment:**
-- Pi package surfaces are declared in `package.json` under `pi.extensions`, `pi.skills`, and `pi.prompts`; the extension entry is `src/extension/index.ts`, skills are loaded from `skills`, and prompts from `prompts`.
-- Package metadata for Pi installation is declared in `extension-manifest.json`, providing the `gsd` tool and `gsd-status`, `gsd-doctor`, `gsd-run`, `gsd-model`, and dynamic `gsd-*` commands.
-- Local development Pi registration is configured by `.pi/settings.json`, which points Pi at the parent package path `..`.
-- Optional model routing configuration is read from `.pi-gsd/model-routing.json` by `src/extension/model-routing.ts`; no project-local `.pi-gsd/model-routing.json` file is present in this repository.
-- `.env` files: not detected in the repository root or first two levels during this scan; do not add secrets to codebase documents.
+- No `.env` file detected at repository root; do not require environment-variable secrets for normal typecheck, build, or unit tests.
+- Runtime behavior is configured through Pi extension metadata in `package.json` (`pi.extensions`, `pi.skills`, `pi.prompts`) and `extension-manifest.json` (`provides.tools`, `provides.commands`, `requires.platform`).
+- Optional project-local model routing is read from `.pi-gsd/model-routing.json` by `src/extension/model-routing.ts` when present. This file is wrapper-private adapter metadata, not a GSD Core `.planning/` artifact.
+- Optional integration detection probes active Pi tools and filesystem paths for `context-mode` and `pi-subagents` in `src/extension/capabilities.ts`.
 
 **Build:**
-- `tsconfig.json` uses `target: ES2022`, `module: NodeNext`, `moduleResolution: NodeNext`, `strict: true`, `skipLibCheck: true`, `allowImportingTsExtensions: true`, `noEmit: true`, and `types: ["node"]`.
-- `package.json` build/typecheck/test scripts are the canonical verification commands:
-  - `npm run typecheck` - run `tsc --noEmit`.
-  - `npm run build` - run `tsc -p tsconfig.json`.
-  - `npm test` - run Node tests in `tests/*.test.ts`.
-- No ESLint, Prettier, Biome, Jest, Vitest, or bundler config files were detected at the repository root.
-
-## Package Layout
-
-**Pi package roots:**
-- `src/extension/index.ts` - default extension entry that registers the `gsd` tool and context-mode guard.
-- `skills/pi-gsd/SKILL.md` - Pi skill that instructs agents to use upstream GSD Core through the adapter and to keep `.planning/` as the GSD record boundary.
-- `prompts/gsd-review-loop.md` - bundled prompt resource declared by `package.json`.
-- `extension-manifest.json` - Pi package identity, platform requirement, and provided tool/command declarations.
-
-**Source modules:**
-- `src/extension/register.ts` - central Pi tool/command registration, model command handler, dynamic upstream command handler, and command argument parsing.
-- `src/extension/dispatcher.ts` - dispatcher for `status`, `doctor`, `run`, and `resolve-model`; calls package-local `gsd-tools` through `pi.exec` or Node `spawn`.
-- `src/extension/capabilities.ts` - capability detection for GSD Core, `gsd-tools`, context-mode, and pi-subagents.
-- `src/extension/gsd-core-commands.ts` - dynamic upstream command discovery and prompt expansion.
-- `src/extension/context-mode-guard.ts` - guardrails for context-mode tool calls.
-- `src/extension/model-routing.ts` - Pi-native GSD model/thinking routing and `.pi-gsd/model-routing.json` loading.
-- `src/types/pi-sdk.d.ts` - ambient declarations for peer-provided Pi and Pi AI APIs.
+- `package.json` - Declares scripts, dependencies, peer dependencies, npm lockfile expectations, and Pi package resources.
+- `package-lock.json` - Pins installed package versions for CI and local development.
+- `tsconfig.json` - Configures strict TypeScript, NodeNext modules, ES2022 target, TypeScript extension imports, and `src/**/*.ts` inclusion.
+- `extension-manifest.json` - Pi package identity and public tool/command metadata.
+- `.github/workflows/ci.yml` - Runs `npm ci`, `npm run typecheck`, `npm run build`, and `npm test` on Node 22.
 
 ## Platform Requirements
 
 **Development:**
-- Install dependencies with `npm install` in the package root containing `package.json` and `package-lock.json`.
-- Use Node.js >=22.0.0.
-- For local Pi development, run `pi install . -l` from this repository and reload/restart Pi as described in `README.md` and `docs/USAGE.md`.
-- Optional accelerators must be installed separately with `pi install npm:context-mode` and `pi install npm:pi-subagents`; they are not nested dependencies of `pi-gsd`.
+- Node.js 22 or newer; CI uses `actions/setup-node@v5` with `node-version: 22` in `.github/workflows/ci.yml`.
+- npm with `package-lock.json`; use `npm install` locally and `npm ci` in CI.
+- Pi CLI for local extension installation and optional smoke validation: README commands are `pi install . -l` and `npm run test:live-pi`.
+- Optional Pi packages `context-mode` and `pi-subagents` should be installed through Pi (`pi install npm:context-mode`, `pi install npm:pi-subagents`) rather than as nested npm dependencies; this constraint is documented in `README.md`, `docs/DESIGN.md`, and `skills/pi-gsd/SKILL.md`.
 
 **Production:**
-- Deployed as a Pi package/extension exposing `src/extension/index.ts` as the extension entry.
-- Requires Pi platform >=2.29.0 and peer availability of `@earendil-works/pi-coding-agent`, `@earendil-works/pi-ai`, and `typebox` from the Pi runtime/package environment.
-- Uses the package-local `@opengsd/gsd-core` dependency; never depend on a system-wide `gsd-tools` binary for production behavior.
+- Deployment target is a Pi package loaded by Pi, not a standalone server. The package exposes extension code through `src/extension/index.ts`, skills under `skills/`, and prompts under `prompts/` via `package.json`.
+- Runtime requires Pi platform >=2.29.0 per `extension-manifest.json` and package-local `@opengsd/gsd-core` availability for `gsd-tools` execution.
+- CI/deployment automation is limited to GitHub Actions in `.github/workflows/ci.yml`; no container image, server host, database, or cloud runtime is configured.
 
 ---
 

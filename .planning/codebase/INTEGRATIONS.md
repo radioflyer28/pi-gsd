@@ -4,128 +4,112 @@
 
 ## APIs & External Services
 
-**Pi SDK / Pi Runtime:**
-- Pi extension API - registers `pi-gsd` as a Pi extension and exposes the `gsd` tool plus slash commands.
-  - SDK/Client: peer package `@earendil-works/pi-coding-agent`; ambient declarations are in `src/types/pi-sdk.d.ts`.
-  - Auth: not applicable; Pi runtime provides `ExtensionAPI` to the default export in `src/extension/index.ts`.
-  - Implementation: `src/extension/index.ts` calls `registerPiGsdCore` and `registerContextModeGuard`; `src/extension/register.ts` uses `registerTool`, `registerCommand`, `getAllTools`, `getThinkingLevel`, `setThinkingLevel`, `setModel`, `sendUserMessage`, and `exec` when present.
-  - Provided surfaces: `extension-manifest.json` declares tool `gsd` and commands `gsd-status`, `gsd-doctor`, `gsd-run`, `gsd-model`, and dynamic `gsd-*`.
+**Pi Runtime:**
+- Pi Coding Agent - Host runtime for the extension, tool registration, slash command registration, UI notifications, command dispatch, model switching, and optional process execution.
+  - SDK/Client: `@earendil-works/pi-coding-agent` imported by `src/extension/index.ts`; runtime API surface modeled by `RegisterablePiApi` and `GsdExecutionContext` in `src/extension/register.ts` and `src/extension/dispatcher.ts`.
+  - Auth: Not detected in this repository. Pi runtime/provider authentication is external to `pi-gsd`.
+- Pi AI model registry - Used only for Pi-native model lookup and switching in `src/extension/model-routing.ts` and `src/extension/register.ts`.
+  - SDK/Client: Pi runtime `modelRegistry`, `setModel`, `getThinkingLevel`, and `setThinkingLevel` methods modeled in `src/extension/register.ts`.
+  - Auth: Not detected in this repository; configured by the user's Pi installation.
 
-**Upstream GSD Core:**
-- `@opengsd/gsd-core` - authoritative GSD workflow implementation used by this package without copying GSD semantics.
-  - SDK/Client: npm dependency `@opengsd/gsd-core` in `package.json`; resolved version 1.3.1 in `package-lock.json`.
-  - Auth: not applicable.
-  - Command execution: `src/extension/dispatcher.ts` locates package-local `node_modules/.bin/gsd-tools` variants via `src/extension/capabilities.ts` and runs them through Pi `exec` or Node `child_process.spawn`.
-  - Command prompt loading: `src/extension/gsd-core-commands.ts` reads package-local markdown commands from `node_modules/@opengsd/gsd-core/commands/gsd/*.md`, converts `gsd:<name>` to `/gsd-<name>`, substitutes arguments, and rewrites `@~/.claude/gsd-core/` references to the package-local GSD Core root.
-  - Boundary: `docs/DESIGN.md`, `README.md`, and `skills/pi-gsd/SKILL.md` require GSD workflow semantics, phase artifact naming, and command behavior to remain upstream.
+**GSD Core:**
+- Upstream `@opengsd/gsd-core` - Source of GSD workflow command prompts and package-local `gsd-tools` binary. `src/extension/gsd-core-commands.ts` discovers markdown command definitions from `node_modules/@opengsd/gsd-core/commands/gsd/*.md`; `src/extension/dispatcher.ts` executes the package-local `gsd-tools` path detected by `src/extension/capabilities.ts`.
+  - SDK/Client: `@opengsd/gsd-core` npm package and `node_modules/.bin/gsd-tools*` command.
+  - Auth: None detected.
 
-**context-mode:**
-- Optional Pi accelerator for bulky/transient context processing, broad scans, logs, reports, and repeated search/filtering.
-  - SDK/Client: no npm dependency in `package.json`; detected as a separately installed Pi package through active tools or filesystem probes.
-  - Auth: not applicable.
-  - Detection: `src/extension/capabilities.ts` treats active tools `ctx_execute`, `ctx_execute_file`, `ctx_search`, `ctx_index`, or `ctx_batch_execute` as the strongest signal, then probes `.pi` and home-level Pi extension/package paths.
-  - Guardrails: `src/extension/context-mode-guard.ts` registers a Pi `tool_call` event handler that blocks accidental wholesale `.planning/` indexing, warns for individual `.planning` indexing, warns for small source/planning `ctx_execute_file` use, and allows logs/reports/build/coverage/data-style paths.
-  - Agent guidance: `src/extension/register.ts` prompt guidelines and `skills/pi-gsd/SKILL.md` instruct agents to use `ctx_*` only when it materially reduces noisy context and not as durable GSD memory.
+**Optional Pi Packages:**
+- `context-mode` - Optional context-efficient toolset detected for agent guidance and guarded by `src/extension/context-mode-guard.ts`.
+  - SDK/Client: Active Pi tool inventory names (`ctx_execute`, `ctx_execute_file`, `ctx_search`, `ctx_index`, `ctx_batch_execute`) or filesystem probes in `src/extension/capabilities.ts`.
+  - Auth: Not detected in this repository; installed through Pi when needed.
+- `pi-subagents` - Optional fresh-context/parallel delegation capability detected for agent guidance in status/doctor output.
+  - SDK/Client: Active Pi tool inventory name `subagent` or filesystem probes in `src/extension/capabilities.ts`.
+  - Auth: Not detected in this repository; installed through Pi when needed.
 
-**pi-subagents:**
-- Optional Pi accelerator for fresh-context or parallel planning, execution, review, and verification.
-  - SDK/Client: no npm dependency in `package.json`; detected as a separately installed Pi package through active `subagent` tool or filesystem probes.
-  - Auth: not applicable.
-  - Detection: `src/extension/capabilities.ts` treats active tool `subagent` as the strongest signal, then probes `.pi` and home-level Pi extension/package paths.
-  - Boundary: `src/extension/register.ts`, `src/extension/dispatcher.ts`, `docs/DESIGN.md`, `docs/USAGE.md`, and `skills/pi-gsd/SKILL.md` explicitly state that the `gsd` tool does not orchestrate subagents internally; parent agents call pi-subagents directly when appropriate.
-  - Model handoff: `src/extension/model-routing.ts` returns a `subagent` block with an optional `model` and advisory `thinking`; consumers pass `subagent.model` only when present and otherwise omit `model` to inherit/default.
-
-**Pi Model Routing Surfaces:**
-- Pi-native model/thinking resolution for GSD agents, skills, and commands.
-  - SDK/Client: Pi runtime `modelRegistry`, current `model`, `getThinkingLevel`, `setThinkingLevel`, `setModel`, and optional UI `select`, declared in `src/types/pi-sdk.d.ts` and consumed by `src/extension/register.ts` and `src/extension/model-routing.ts`.
-  - Auth: model provider authentication is handled by Pi; this package only asks Pi to find/switch models and reports unavailable/auth failures.
-  - Configuration: optional `.pi-gsd/model-routing.json` read by `src/extension/model-routing.ts`; no such file is present in this repository.
-  - Commands/tools: `gsd` tool action `resolve-model` is implemented in `src/extension/dispatcher.ts`; `/gsd-model [agent|skill|command] <target>` is implemented by `src/extension/register.ts`.
-  - Defaults: `src/extension/model-routing.ts` maps heavy GSD targets to `xhigh`, standard targets to `high`, and light targets to `medium`, while model selection defaults to `inherit`.
-  - Fallback policies: `inherit`, `omit`, `error`, and `prompt` are supported by `src/extension/model-routing.ts`; prompt choices are remembered in memory via `sessionModelOverrides` in `src/extension/register.ts`.
-
-**Schema and Tool Parameter Construction:**
-- `typebox` and `@earendil-works/pi-ai` - build runtime parameter schema for the `gsd` tool.
-  - SDK/Client: peer packages `typebox` and `@earendil-works/pi-ai`.
-  - Auth: not applicable.
-  - Implementation: `src/extension/index.ts` constructs `TOOL_PARAMS` with `Type.Object`, `Type.Array`, `Type.String`, `Type.Optional`, and `StringEnum` for actions `status`, `doctor`, `run`, and `resolve-model`.
+**Package Registries:**
+- npm registry - Dependency source for `@opengsd/gsd-core`, Pi peer packages, TypeScript, and Node types as recorded in `package-lock.json`.
+  - SDK/Client: npm CLI via `npm install` / `npm ci` in `README.md` and `.github/workflows/ci.yml`.
+  - Auth: No `.npmrc` file detected or read; no repository-local npm token is used.
 
 ## Data Storage
 
 **Databases:**
 - Not detected.
-  - Connection: not applicable.
-  - Client: no ORM or database client in `package.json`, `package-lock.json`, or `src/extension/*.ts`.
+  - Connection: Not applicable.
+  - Client: Not applicable.
 
 **File Storage:**
 - Local filesystem only.
-  - Package metadata: `package.json`, `package-lock.json`, `extension-manifest.json`, `.pi/settings.json`, and `tsconfig.json`.
-  - GSD Core command prompts: read from package-local `node_modules/@opengsd/gsd-core/commands/gsd/*.md` by `src/extension/gsd-core-commands.ts`.
-  - Optional model routing: `.pi-gsd/model-routing.json` read by `src/extension/model-routing.ts` when present.
-  - GSD records: `.planning/` is the canonical project-local record directory by convention in `README.md`, `docs/DESIGN.md`, `docs/USAGE.md`, and `skills/pi-gsd/SKILL.md`.
+  - `src/extension/capabilities.ts` reads local package and Pi installation paths to detect `@opengsd/gsd-core`, `gsd-tools`, `context-mode`, and `pi-subagents`.
+  - `src/extension/gsd-core-commands.ts` reads package-local upstream GSD Core command markdown files from `node_modules/@opengsd/gsd-core/commands/gsd/*.md`.
+  - `src/extension/model-routing.ts` optionally reads `.pi-gsd/model-routing.json` for project-local Pi model routing.
+  - `src/extension/dispatcher.ts` reads `$HOME/.pi/agent/skills/*/SKILL.md` paths to warn about external global `gsd-*` skills.
 
 **Caching:**
-- In-memory session cache only for model fallback selections.
-  - Implementation: `src/extension/register.ts` keeps `sessionModelOverrides` as a `Map<string, string>` for the current Pi extension session.
-  - External cache: context-mode may maintain its own cache/index when installed, but `pi-gsd` does not use it as durable storage.
+- None implemented by this package.
+- `context-mode` may provide its own caches when installed, but `pi-gsd` treats those as optional supporting context and not durable state; this boundary is documented in `README.md`, `docs/DESIGN.md`, and `skills/pi-gsd/SKILL.md`.
 
 ## Authentication & Identity
 
 **Auth Provider:**
-- Pi runtime / configured model providers.
-  - Implementation: `src/extension/register.ts` calls `pi.setModel` only after `findPiModel` resolves a model from Pi's registry; if Pi reports missing auth or unavailable model, the command reports that failure.
-  - No application-level users, OAuth providers, sessions, JWT libraries, or identity service clients are present in `package.json` or `src/extension/*.ts`.
+- Not detected.
+  - Implementation: `pi-gsd` does not implement user identity, sessions, tokens, login flows, or OAuth. It inherits any provider/model authentication from the surrounding Pi runtime.
+
+**Model Identity:**
+- Pi-native provider/model references are represented as `provider/id` strings by `modelRef()` in `src/extension/model-routing.ts`.
+- Optional routing configuration is read from `.pi-gsd/model-routing.json`; missing or unavailable configured models fall back according to `inherit`, `omit`, `error`, or `prompt` policy in `src/extension/model-routing.ts`.
 
 ## Monitoring & Observability
 
 **Error Tracking:**
-- None detected.
-  - No Sentry, OpenTelemetry, Datadog, or similar dependency is present in `package.json` or imports under `src/extension/*.ts`.
+- None.
 
 **Logs:**
-- User-visible tool/command output and Pi UI notifications.
-  - Status/doctor output: `src/extension/dispatcher.ts` formats capability and integration diagnostics for the `gsd` tool and commands.
-  - Context-mode guard notifications: `src/extension/context-mode-guard.ts` calls `ctx.ui.notify` with `warning` or `error` when Pi UI is available.
-  - Runtime command output: `src/extension/dispatcher.ts` combines `stdout`, `stderr`, and exit code from `gsd-tools`, then truncates via `src/extension/index.ts` Pi truncation helpers or local `truncateTailText` fallback.
+- Tool and command results are returned as text to Pi rather than sent to external logs. `src/extension/register.ts` wraps tool results in `content: [{ type: "text", text }]`.
+- `src/extension/dispatcher.ts` includes stdout, stderr, and exit code from `gsd-tools` execution in the returned text.
+- `src/extension/index.ts` truncates tool output with Pi helper functions `truncateTail`, `DEFAULT_MAX_BYTES`, and `DEFAULT_MAX_LINES`.
+- `src/extension/dispatcher.ts` bounds spawned process output with `StreamingTextTail` before final truncation.
+- `scripts/live-pi-rpc-smoke.mjs` writes smoke-test failures and timeout details to stderr for local/CI diagnostics.
 
 ## CI/CD & Deployment
 
 **Hosting:**
-- Pi package installation.
-  - Local development install: `README.md` and `docs/USAGE.md` use `npm install` followed by `pi install . -l`.
-  - Package metadata: `extension-manifest.json` marks this as package id `pi-gsd` with version `0.1.0` and community tier.
+- Pi package loaded by Pi from this repository or an installed package source.
+- Local development install is documented as `pi install . -l` in `README.md`.
+- `extension-manifest.json` declares package id `pi-gsd`, tool `gsd`, and command patterns `gsd-status`, `gsd-doctor`, `gsd-run`, `gsd-model`, and `gsd-*`.
 
 **CI Pipeline:**
-- None detected in the repository scan.
-  - No `.github/workflows` files were observed in the first-level file listing.
-  - Canonical verification commands are documented in `README.md`, `docs/DESIGN.md`, and `docs/USAGE.md`: `npm run typecheck`, `npm run build`, and `npm test`.
+- GitHub Actions in `.github/workflows/ci.yml`.
+- Pipeline triggers on pushes to `main` and pull requests.
+- Pipeline uses `actions/checkout@v5`, `actions/setup-node@v5`, Node 22, npm cache, `npm ci`, `npm run typecheck`, `npm run build`, and `npm test`.
+- Optional live Pi RPC smoke test is available via `npm run test:live-pi` in `package.json` and `scripts/live-pi-rpc-smoke.mjs`, but it is not part of `.github/workflows/ci.yml`.
 
 ## Environment Configuration
 
 **Required env vars:**
-- None detected for this package.
-- Model provider credentials, if needed, are owned by the host Pi/model provider configuration, not by `pi-gsd` source files.
+- None detected for package build, unit tests, or normal extension registration.
+- No `.env` file detected at repository root. Do not add secrets to codebase docs or planning artifacts.
 
 **Secrets location:**
-- Not detected in repository files scanned.
-- Do not store secrets in `.planning/codebase/*.md`; if environment files are added later, note existence only and never quote contents.
+- Not detected in this repository.
+- Pi provider credentials, if any, live outside this package in the user's Pi/runtime configuration.
+- Repository-local `.pi/settings.json` exists but was not needed for integration analysis and should not be treated as an application secret source.
 
-**Optional project config:**
-- `.pi-gsd/model-routing.json` - optional project-local model routing file read by `src/extension/model-routing.ts`; currently absent.
-- `.pi/settings.json` - local Pi package registration for development; currently lists `..` under `packages`.
+**Runtime config files:**
+- `package.json` - Pi package resource registration and npm scripts.
+- `extension-manifest.json` - Pi platform requirement and public tool/command metadata.
+- `tsconfig.json` - TypeScript runtime/module assumptions.
+- `.pi-gsd/model-routing.json` - Optional project-local model routing read by `src/extension/model-routing.ts` when present.
 
 ## Webhooks & Callbacks
 
 **Incoming:**
-- Pi extension registration callback - `src/extension/index.ts` default export receives `ExtensionAPI` and registers tools, commands, and event guard handlers.
-- Pi tool execution callback - `src/extension/register.ts` registers the `gsd` tool `execute` callback for actions `status`, `doctor`, `run`, and `resolve-model`.
-- Pi command callbacks - `src/extension/register.ts` registers handlers for `/gsd-status`, `/gsd-doctor`, `/gsd-run`, `/gsd-model`, and each dynamic upstream `/gsd-*` command.
-- Pi `tool_call` event callback - `src/extension/context-mode-guard.ts` registers `pi.on("tool_call", ...)` to evaluate context-mode guard decisions.
+- None detected. No HTTP server, webhook route, or API endpoint exists in `src/extension/*.ts`.
+- Pi invokes extension registration through `src/extension/index.ts` and command/tool handlers registered in `src/extension/register.ts`.
 
 **Outgoing:**
-- Local process execution - `src/extension/dispatcher.ts` calls package-local `gsd-tools` through Pi `exec` or Node `child_process.spawn`; no network API calls are made by this adapter layer.
-- Pi agent message dispatch - `src/extension/register.ts` uses `pi.sendUserMessage` to inject expanded upstream GSD Core command prompts for dynamic `/gsd-*` commands.
-- Pi UI/model operations - `src/extension/register.ts` calls optional `ctx.ui.select`, `pi.setModel`, and `pi.setThinkingLevel` for `/gsd-model` flows.
+- No direct HTTP API calls detected in `src/extension/*.ts`, `tests/*.test.ts`, or `scripts/live-pi-rpc-smoke.mjs`.
+- Outgoing process execution is limited to package-local `gsd-tools` via Pi `exec` or Node `child_process.spawn` in `src/extension/dispatcher.ts`, and to the Pi CLI smoke test in `scripts/live-pi-rpc-smoke.mjs`.
+- npm dependency installation and GitHub Actions use network services outside application runtime; configuration is in `package.json`, `package-lock.json`, and `.github/workflows/ci.yml`.
 
 ---
 

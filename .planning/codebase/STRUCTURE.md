@@ -6,219 +6,237 @@
 
 ```text
 pi-gsd/
-├── src/                         # TypeScript extension implementation
-│   ├── extension/               # Pi extension entry, registration, dispatcher, capability, routing, and guard modules
-│   └── types/                   # Local Pi SDK declaration shim
-├── tests/                       # Node built-in test runner tests for extension behavior
-├── docs/                        # Maintainer and user documentation
-├── skills/                      # Pi skill resources exposed by package metadata
-│   └── pi-gsd/                  # Skill guidance for agents using GSD from Pi
-├── prompts/                     # Pi prompt resources exposed by package metadata
-├── .planning/codebase/          # GSD codebase map documents
-├── package.json                 # npm metadata, scripts, dependency boundaries, and Pi resource declarations
-├── extension-manifest.json      # Public Pi package manifest with tool/command exposure
-└── tsconfig.json                # TypeScript compiler settings
+├── .github/                 # GitHub automation and CI workflows
+│   └── workflows/           # Workflow YAML files
+├── .pi/                     # Project-local Pi settings; no project skills detected here
+├── .planning/               # Canonical GSD-compatible project records and generated maps
+│   ├── codebase/            # Codebase map documents written by GSD mapping tasks
+│   └── intel/               # GSD research/intelligence artifacts
+├── docs/                    # Maintainer and user documentation
+│   ├── DESIGN.md            # Architectural boundaries and implementation guidance
+│   └── USAGE.md             # Usage-oriented documentation
+├── prompts/                 # Pi prompt resources exported by the package
+│   └── gsd-review-loop.md   # Review-loop prompt resource
+├── scripts/                 # Developer/runtime smoke scripts
+│   └── live-pi-rpc-smoke.mjs # Live Pi RPC extension registration smoke test
+├── skills/                  # Pi skill resources exported by the package
+│   └── pi-gsd/SKILL.md      # Agent guidance for using pi-gsd safely
+├── src/                     # TypeScript extension source
+│   ├── extension/           # Pi extension implementation modules
+│   └── types/               # Ambient SDK declarations used by TypeScript
+├── tests/                   # Node test-runner tests and test doubles
+├── extension-manifest.json  # Pi package manifest metadata
+├── package.json             # Node package metadata, scripts, Pi resource entries
+├── package-lock.json        # npm lockfile
+└── tsconfig.json            # TypeScript compiler settings
 ```
 
 ## Directory Purposes
 
-**`src/`:**
-- Purpose: All TypeScript source for the Pi adapter.
-- Contains: Extension modules and type declarations.
-- Key files: `src/extension/index.ts`, `src/extension/register.ts`, `src/extension/dispatcher.ts`, `src/extension/capabilities.ts`, `src/extension/gsd-core-commands.ts`, `src/extension/model-routing.ts`, `src/extension/context-mode-guard.ts`, `src/types/pi-sdk.d.ts`.
-
 **`src/extension/`:**
-- Purpose: Runtime implementation of the `pi-gsd` Pi package.
-- Contains: Pi extension entry point, registration layer, dispatcher, capability detector, upstream command discovery, model routing, and context-mode guard.
-- Key files: `src/extension/index.ts` for package entry, `src/extension/register.ts` for tool/command registration, `src/extension/dispatcher.ts` for GSD execution, `src/extension/capabilities.ts` for mode detection.
+- Purpose: Contains all runtime code that Pi loads for the `pi-gsd` extension.
+- Contains: Extension entry point, registration layer, dispatcher, capability discovery, upstream command discovery, model routing, and context-mode guardrails.
+- Key files: `src/extension/index.ts`, `src/extension/register.ts`, `src/extension/dispatcher.ts`, `src/extension/capabilities.ts`, `src/extension/gsd-core-commands.ts`, `src/extension/model-routing.ts`, `src/extension/context-mode-guard.ts`.
 
 **`src/types/`:**
-- Purpose: Local type declarations for Pi SDK surfaces used by this package.
-- Contains: Declaration files only.
+- Purpose: Declares the small subset of Pi SDK and Pi AI API types consumed by this package.
+- Contains: Ambient module declarations for `@earendil-works/pi-coding-agent` and `@earendil-works/pi-ai`.
 - Key files: `src/types/pi-sdk.d.ts`.
 
 **`tests/`:**
-- Purpose: Behavioral test suite for the adapter modules.
-- Contains: Node `test` files using TypeScript stripping.
-- Key files: `tests/register.test.ts`, `tests/dispatcher.test.ts`, `tests/capabilities.test.ts`, `tests/context-mode-guard.test.ts`, `tests/metadata.test.ts`, `tests/smoke.test.ts`, `tests/test-utils.ts`.
+- Purpose: Unit and integration-style tests for extension modules using Node's built-in test runner.
+- Contains: One test file per runtime module plus shared fake Pi helpers.
+- Key files: `tests/register.test.ts`, `tests/dispatcher.test.ts`, `tests/capabilities.test.ts`, `tests/model-routing.test.ts`, `tests/context-mode-guard.test.ts`, `tests/gsd-core-commands.test.ts`, `tests/test-utils.ts`, `tests/smoke.test.ts`.
 
 **`docs/`:**
-- Purpose: Human-facing design and usage guidance for maintainers and users.
-- Contains: Markdown documents.
+- Purpose: Human-facing design and usage documentation for maintainers and users.
+- Contains: Architecture boundary decisions, optional integration guidance, and usage examples.
 - Key files: `docs/DESIGN.md`, `docs/USAGE.md`.
 
 **`skills/`:**
-- Purpose: Pi skill resources declared in `package.json` under `pi.skills`.
-- Contains: Skill directories with `SKILL.md` files.
+- Purpose: Pi skill resources exported through the `pi.skills` entry in `package.json`.
+- Contains: The `pi-gsd` skill used by agents when running GSD workflows through Pi.
 - Key files: `skills/pi-gsd/SKILL.md`.
 
 **`prompts/`:**
-- Purpose: Pi prompt resources declared in `package.json` under `pi.prompts`.
-- Contains: Prompt markdown files.
+- Purpose: Pi prompt resources exported through the `pi.prompts` entry in `package.json`.
+- Contains: Reusable prompt content for GSD review-loop workflows.
 - Key files: `prompts/gsd-review-loop.md`.
 
-**`.planning/codebase/`:**
-- Purpose: GSD-compatible codebase map artifacts for planner/executor reference.
-- Contains: Generated mapping documents.
-- Key files: `.planning/codebase/ARCHITECTURE.md`, `.planning/codebase/STRUCTURE.md`.
+**`scripts/`:**
+- Purpose: Developer scripts that exercise runtime integration outside the unit test harness.
+- Contains: Live Pi RPC smoke test.
+- Key files: `scripts/live-pi-rpc-smoke.mjs`.
+
+**`.planning/`:**
+- Purpose: Canonical GSD project records and generated planning/codebase artifacts.
+- Contains: Codebase maps, project configuration, and GSD intelligence artifacts.
+- Key files: `.planning/config.json`, `.planning/codebase/ARCHITECTURE.md`, `.planning/codebase/STRUCTURE.md`.
+
+**`.pi/`:**
+- Purpose: Project-local Pi settings.
+- Contains: Pi settings only in this repository; no `.pi/skills/` project-skill directory is present.
+- Key files: `.pi/settings.json`.
 
 ## Key File Locations
 
 **Entry Points:**
-- `src/extension/index.ts`: Default Pi extension export. Defines `TOOL_PARAMS`, configures output truncation, calls `registerPiGsdCore`, and registers the context-mode guard.
-- `package.json`: Declares `./src/extension/index.ts` as the Pi extension entry and exposes `./skills` and `./prompts` as package resources.
-- `extension-manifest.json`: Advertises public tool `gsd` and commands `gsd-status`, `gsd-doctor`, `gsd-run`, `gsd-model`, and `gsd-*`.
+- `src/extension/index.ts`: Default Pi extension export; registers the `gsd` tool and context-mode guard.
+- `package.json`: Declares the package as ESM, points Pi at `./src/extension/index.ts`, and exports `./skills` and `./prompts`.
+- `extension-manifest.json`: Declares package metadata and provided public tools/commands for Pi packaging.
+- `scripts/live-pi-rpc-smoke.mjs`: Live RPC smoke entry used by `npm run test:live-pi`.
 
 **Configuration:**
-- `package.json`: npm metadata, scripts, Node engine, peer dependency boundaries, package-local `@opengsd/gsd-core` dependency, and Pi resource declarations.
-- `tsconfig.json`: Strict NodeNext TypeScript config with `allowImportingTsExtensions` and `noEmit`.
-- `.pi-gsd/model-routing.json`: Optional project-local adapter-private model routing config read by `src/extension/model-routing.ts` when present.
-- `.planning/`: GSD project record directory reported by status/doctor; do not store Pi-wrapper-specific config here.
+- `package.json`: Defines scripts (`typecheck`, `build`, `test`, `test:live-pi`), dependencies, peer dependencies, Node engine, and Pi resource locations.
+- `package-lock.json`: Locks npm dependency versions.
+- `tsconfig.json`: Configures TypeScript compilation for source and ambient declarations.
+- `.pi/settings.json`: Project-local Pi settings; do not treat it as extension source.
+- Optional `.pi-gsd/model-routing.json`: Wrapper-private model routing config consumed by `src/extension/model-routing.ts` when present.
+- `.planning/config.json`: GSD project configuration; keep normal GSD-compatible project records in `.planning/`.
 
 **Core Logic:**
-- `src/extension/register.ts`: Central file for `gsd` tool registration, static `/gsd-*` commands, dynamic upstream slash commands, argument parsing, and model command behavior.
-- `src/extension/dispatcher.ts`: Central file for `status`, `doctor`, `run`, and `resolve-model` dispatcher operations.
-- `src/extension/capabilities.ts`: Central file for package-local GSD Core, `gsd-tools`, `context-mode`, and `pi-subagents` detection.
-- `src/extension/gsd-core-commands.ts`: Central file for discovering package-local upstream GSD command markdown and expanding command prompts.
-- `src/extension/model-routing.ts`: Central file for defaults, tiers, `.pi-gsd/model-routing.json`, model availability checks, and subagent routing output.
-- `src/extension/context-mode-guard.ts`: Central file for context-mode `tool_call` policy and registration.
+- `src/extension/register.ts`: Add or change Pi tool/command registration behavior here.
+- `src/extension/dispatcher.ts`: Add or change status/doctor/run/resolve-model dispatch behavior here.
+- `src/extension/capabilities.ts`: Add or change package-local or optional integration detection here.
+- `src/extension/gsd-core-commands.ts`: Add or change upstream command markdown discovery and expansion here.
+- `src/extension/model-routing.ts`: Add or change Pi-native model and thinking resolution here.
+- `src/extension/context-mode-guard.ts`: Add or change context-mode guardrail decisions here.
 
 **Testing:**
-- `tests/register.test.ts`: Covers Pi-facing tool/command registration, argument parsing, dynamic upstream command exposure, active tool detection, and `/gsd-model` behavior.
-- `tests/dispatcher.test.ts`: Covers CWD resolution, status/doctor output, external GSD skill warnings, command execution, truncation, and refusal to use system-wide `gsd-tools`.
-- `tests/capabilities.test.ts`: Covers optional integration modes, package-local GSD detection, project/user optional package paths, and active tool inventory precedence.
-- `tests/context-mode-guard.test.ts`: Covers `.planning/` indexing blocks/warnings and small-file context-mode guard behavior.
-- `tests/metadata.test.ts`: Covers package and extension manifest resource exposure.
-- `tests/smoke.test.ts`: Covers dispatcher smoke behavior against installed package dependencies.
-- `tests/test-utils.ts`: Provides mock Pi API and shared capability fixtures.
+- `tests/test-utils.ts`: Add shared Pi API fakes and result helpers here.
+- `tests/register.test.ts`: Test tool/command registration, command handlers, active tool inventory detection, and model-switch command behavior.
+- `tests/dispatcher.test.ts`: Test cwd resolution, status/doctor formatting, `gsd-tools` dispatch, truncation, spawn fallback, and missing-tool handling.
+- `tests/capabilities.test.ts`: Test capability path detection and optional integration mode computation.
+- `tests/model-routing.test.ts`: Test routing defaults, target inference, config merging, availability checks, fallback policies, and formatted output.
+- `tests/context-mode-guard.test.ts`: Test context-mode allow/warn/block decisions and Pi event hook integration.
+- `tests/gsd-core-commands.test.ts`: Test upstream markdown command discovery and prompt expansion.
+- `tests/smoke.test.ts`: Test package-level command availability assumptions.
 
-**Documentation:**
-- `README.md`: Project overview, install instructions, public surfaces, optional integration behavior, and development commands.
-- `docs/DESIGN.md`: Maintainer architecture, boundaries, dispatcher model, capability model, and state boundaries.
-- `docs/USAGE.md`: User guide for slash commands, `gsd` tool actions, context-mode usage, model routing, and pi-subagents usage.
-- `skills/pi-gsd/SKILL.md`: Agent-facing rules for using the `gsd` tool and respecting state boundaries.
+**Documentation and Skills:**
+- `README.md`: Keep public overview, installation, usage, and troubleshooting in sync with runtime behavior.
+- `docs/DESIGN.md`: Keep architectural boundaries and maintainer guidance here.
+- `docs/USAGE.md`: Keep detailed usage examples here.
+- `skills/pi-gsd/SKILL.md`: Keep agent-facing Pi/GSD workflow guidance here.
+- `prompts/gsd-review-loop.md`: Keep prompt-specific workflow content here.
 
 ## Naming Conventions
 
 **Files:**
-- Use kebab-case for multiword TypeScript modules: `src/extension/gsd-core-commands.ts`, `src/extension/model-routing.ts`, `src/extension/context-mode-guard.ts`.
-- Use concise role names for primary modules: `src/extension/index.ts`, `src/extension/register.ts`, `src/extension/dispatcher.ts`, `src/extension/capabilities.ts`.
-- Use `.test.ts` suffix for tests: `tests/register.test.ts`, `tests/dispatcher.test.ts`.
-- Use uppercase markdown names for generated codebase maps: `.planning/codebase/ARCHITECTURE.md`, `.planning/codebase/STRUCTURE.md`.
+- Runtime modules use kebab-case descriptive names: `src/extension/model-routing.ts`, `src/extension/context-mode-guard.ts`, `src/extension/gsd-core-commands.ts`.
+- The extension entry point is named `index.ts`: `src/extension/index.ts`.
+- Ambient declarations use `.d.ts`: `src/types/pi-sdk.d.ts`.
+- Tests mirror source module names with `.test.ts`: `tests/model-routing.test.ts`, `tests/context-mode-guard.test.ts`.
+- Shared test helpers use descriptive utility names: `tests/test-utils.ts`.
+- Documentation and GSD map files use uppercase names when they are durable reference artifacts: `README.md`, `docs/DESIGN.md`, `.planning/codebase/ARCHITECTURE.md`.
 
 **Directories:**
-- Use role-based top-level directories: `src/`, `tests/`, `docs/`, `skills/`, `prompts/`.
-- Keep Pi skill content under `skills/<skill-name>/SKILL.md`, as in `skills/pi-gsd/SKILL.md`.
-- Keep implementation code under `src/extension/`; do not create parallel implementation directories for GSD semantics.
+- Runtime TypeScript belongs under `src/extension/`.
+- Type declarations belong under `src/types/`.
+- Tests belong under top-level `tests/` rather than co-located with source.
+- Pi package resources belong under top-level `skills/` and `prompts/` and are referenced from `package.json`.
+- GSD-compatible artifacts belong under `.planning/`.
+- Wrapper-private project config belongs under `.pi-gsd/` only when needed; do not create `.gsd/`.
 
 ## Where to Add New Code
 
-**New Pi Tool or Slash Command Behavior:**
-- Primary code: `src/extension/register.ts`
-- Supporting dispatcher behavior: `src/extension/dispatcher.ts`
-- Tests: `tests/register.test.ts` for registration/handler behavior and `tests/dispatcher.test.ts` for execution/diagnostic behavior.
-- Metadata: `extension-manifest.json` and `package.json` only when the public package surface changes.
+**New Pi Tool Parameter or Public Tool Behavior:**
+- Primary code: `src/extension/index.ts` for schema additions; `src/extension/register.ts` for execution routing.
+- Tests: `tests/register.test.ts` and, when schema/resources change, `tests/metadata.test.ts` or `tests/smoke.test.ts`.
+- Guidance: Keep the public tool named `gsd`; add actions only when they remain thin adapter operations.
+
+**New Fixed Slash Command:**
+- Primary code: `src/extension/register.ts`.
+- Tests: `tests/register.test.ts`.
+- Documentation: `README.md`, `docs/USAGE.md`, and `extension-manifest.json` if the command is public.
+- Guidance: Use `gsd-*` names; do not add broad commands such as `/status` or `/run`.
+
+**New Upstream GSD Command Handling:**
+- Primary code: Prefer no local code. Add or update command markdown upstream in `@opengsd/gsd-core` when semantics change.
+- Local adapter code: `src/extension/gsd-core-commands.ts` only if discovery or prompt expansion behavior changes.
+- Tests: `tests/gsd-core-commands.test.ts` and `tests/register.test.ts`.
+- Guidance: Do not copy upstream command markdown into this repository.
 
 **New Dispatcher Operation:**
-- Primary code: `src/extension/dispatcher.ts`
-- Invocation wiring: `src/extension/register.ts`
-- Tool schema: `src/extension/index.ts`
-- Tests: `tests/dispatcher.test.ts` and `tests/register.test.ts`.
+- Primary code: `src/extension/dispatcher.ts` for dispatcher interface/implementation; `src/extension/register.ts` for mapping Pi calls to the new operation; `src/extension/index.ts` for action schema.
+- Tests: `tests/dispatcher.test.ts`, `tests/register.test.ts`.
+- Guidance: Use dependency injection for filesystem, execution, detection, and truncation seams.
 
 **New Capability Detection:**
-- Primary code: `src/extension/capabilities.ts`
-- User-visible status/doctor formatting: `src/extension/dispatcher.ts`
-- Tests: `tests/capabilities.test.ts` and status/doctor assertions in `tests/dispatcher.test.ts`.
-- Use active Pi tool inventory where possible before adding filesystem probes.
+- Primary code: `src/extension/capabilities.ts`.
+- Call site: `src/extension/register.ts` if active Pi tool inventory names need to be included.
+- Tests: `tests/capabilities.test.ts`, with registration coverage in `tests/register.test.ts` when active tool detection matters.
+- Guidance: Prefer active Pi tool inventory over filesystem probes.
 
-**New Upstream GSD Command Exposure Logic:**
-- Primary code: `src/extension/gsd-core-commands.ts`
-- Registration wiring: `src/extension/register.ts`
-- Tests: `tests/register.test.ts`.
-- Keep command bodies in upstream `@opengsd/gsd-core`; do not copy workflow markdown into this repository.
+**New Model Routing Rule or Fallback:**
+- Primary code: `src/extension/model-routing.ts`.
+- Command behavior: `src/extension/register.ts` for `/gsd-model` side effects.
+- Tests: `tests/model-routing.test.ts`, `tests/register.test.ts`.
+- Guidance: Keep default routes provider-agnostic by inheriting/omitting Pi model unless a project explicitly configures `.pi-gsd/model-routing.json`.
 
-**New Model Routing Behavior:**
-- Primary code: `src/extension/model-routing.ts`
-- `/gsd-model` application behavior: `src/extension/register.ts`
-- Tool formatting behavior: `src/extension/dispatcher.ts`
-- Tests: `tests/register.test.ts` for Pi command/tool behavior and a dedicated model-routing test file if pure routing cases grow.
-- Store adapter-private project config in `.pi-gsd/model-routing.json`, not `.planning/`.
-
-**New Context-mode Guard Policy:**
-- Primary code: `src/extension/context-mode-guard.ts`
-- Entry wiring: `src/extension/index.ts`
+**New Context-Mode Guardrail:**
+- Primary code: `src/extension/context-mode-guard.ts`.
 - Tests: `tests/context-mode-guard.test.ts`.
-- Use `warn` for plausible legitimate intent and reserve `block` for high-risk accidental patterns such as wholesale `.planning/` indexing.
+- Guidance: Implement pure decision logic in `evaluateContextModeToolCall` first, then keep `registerContextModeGuard` as a thin Pi event adapter.
 
-**New Component/Module:**
-- Implementation: `src/extension/<descriptive-kebab-name>.ts`
-- Tests: `tests/<descriptive-kebab-name>.test.ts` or the closest behavior-focused existing test file.
-- Imports: Use explicit `.ts` extensions in local imports, matching `src/extension/register.ts` and `tsconfig.json`.
+**New Runtime Documentation:**
+- Public usage: `README.md` and `docs/USAGE.md`.
+- Maintainer architecture: `docs/DESIGN.md`.
+- Agent instructions: `skills/pi-gsd/SKILL.md`.
+- Prompt resources: `prompts/gsd-review-loop.md`.
+
+**New Tests:**
+- Unit tests: Add `tests/<module>.test.ts` for a new source module.
+- Shared fakes: Extend `tests/test-utils.ts` for reusable Pi runtime behavior.
+- Live runtime check: Extend `scripts/live-pi-rpc-smoke.mjs` only for behavior that unit tests cannot validate.
 
 **Utilities:**
-- Shared test helpers: `tests/test-utils.ts`
-- Runtime helpers used by one layer: keep private in the owning module, e.g. parsing helpers in `src/extension/register.ts` and normalization helpers in `src/extension/model-routing.ts`.
-- Runtime helpers used across layers: extract to a named `src/extension/<topic>.ts` module and import from higher-level layers only.
-
-**Documentation:**
-- Maintainer design rules: `docs/DESIGN.md`
-- User-facing command/tool instructions: `docs/USAGE.md`
-- Agent behavior guidance: `skills/pi-gsd/SKILL.md`
-- Quick project overview: `README.md`
+- Shared runtime helpers that are part of one concern should stay in that module, such as `parseCommandArgs` in `src/extension/register.ts` and `shellWords` in `src/extension/gsd-core-commands.ts`.
+- Create a new `src/extension/<concern>.ts` module when helper logic becomes reusable across multiple runtime modules.
+- Keep test-only helpers in `tests/test-utils.ts`; do not import test helpers from `src/extension/`.
 
 ## Special Directories
 
 **`node_modules/`:**
-- Purpose: npm dependencies including package-local `@opengsd/gsd-core` and `.bin/gsd-tools`.
-- Generated: Yes
-- Committed: No
-
-**`.git/`:**
-- Purpose: Git repository metadata.
-- Generated: Yes
-- Committed: No
+- Purpose: Installed npm dependencies, including package-local `@opengsd/gsd-core` and `node_modules/.bin/gsd-tools`.
+- Generated: Yes.
+- Committed: No.
+- Guidance: Runtime detection may inspect this directory through `src/extension/capabilities.ts`; source code should not be added here.
 
 **`.planning/`:**
-- Purpose: Canonical GSD project records and codebase maps.
-- Generated: Partly; GSD commands and mapper tasks write artifacts here.
-- Committed: Project-dependent; codebase maps are intended as durable GSD reference artifacts.
+- Purpose: Canonical GSD project-local records and generated planning/codebase documents.
+- Generated: Partly; maintained by GSD workflows and mapping tasks.
+- Committed: Project-dependent.
+- Guidance: Write normal GSD-compatible artifacts here. Do not put Pi-wrapper private state here.
+
+**`.pi/`:**
+- Purpose: Project-local Pi settings.
+- Generated: Yes, by Pi configuration/install workflows.
+- Committed: Project-dependent.
+- Guidance: Do not store runtime source here. No `.pi/skills/` directory is present in this repository.
 
 **`.pi-gsd/`:**
-- Purpose: Adapter-private project metadata, currently optional `model-routing.json`.
-- Generated: No automatic creation by core extension code.
-- Committed: Project-dependent; use only for explicit adapter-private configuration.
+- Purpose: Optional wrapper-private project metadata, currently model routing configuration.
+- Generated: No by default.
+- Committed: Project-dependent.
+- Guidance: Create only when a documented project-local adapter setting is needed; expected key file is `.pi-gsd/model-routing.json`.
 
-**`skills/pi-gsd/`:**
-- Purpose: Pi skill packaged with this adapter.
-- Generated: No
-- Committed: Yes
+**`skills/`:**
+- Purpose: Pi skills exported by this package.
+- Generated: No.
+- Committed: Yes.
+- Guidance: Add package skills here and declare/keep `package.json` `pi.skills` pointing to `./skills`.
 
 **`prompts/`:**
-- Purpose: Pi prompt resources packaged with this adapter.
-- Generated: No
-- Committed: Yes
+- Purpose: Pi prompt resources exported by this package.
+- Generated: No.
+- Committed: Yes.
+- Guidance: Add prompt resources here and keep `package.json` `pi.prompts` pointing to `./prompts`.
 
-## File Placement Rules
-
-**Keep Pi-facing registration centralized:**
-- Put `registerTool` and `registerCommand` calls in `src/extension/register.ts`.
-- Keep only package-entry setup in `src/extension/index.ts`.
-
-**Keep upstream GSD boundaries explicit:**
-- Put command discovery/expansion code in `src/extension/gsd-core-commands.ts`.
-- Put `gsd-tools` execution code in `src/extension/dispatcher.ts`.
-- Do not add GSD workflow behavior under `skills/`, `prompts/`, or `src/extension/` when it belongs upstream.
-
-**Keep optional integration handling decoupled:**
-- Put detection in `src/extension/capabilities.ts`.
-- Put context-mode guard policy in `src/extension/context-mode-guard.ts`.
-- Do not import optional packages such as `context-mode` or `pi-subagents` from runtime source.
-
-**Keep tests behavior-focused:**
-- Use `tests/register.test.ts` for public Pi surface behavior.
-- Use `tests/dispatcher.test.ts` for dispatcher execution and diagnostics.
-- Use `tests/capabilities.test.ts` for detection paths and mode computation.
-- Use `tests/metadata.test.ts` when `package.json` or `extension-manifest.json` changes.
+**`.github/workflows/`:**
+- Purpose: GitHub Actions automation.
+- Generated: No.
+- Committed: Yes.
+- Guidance: Add CI workflows here; keep project test commands aligned with `package.json` scripts.
 
 ---
 
