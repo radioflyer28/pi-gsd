@@ -1,0 +1,29 @@
+{
+  "_meta": {
+    "updated_at": "2026-06-08T14:55:02.139Z",
+    "version": 2
+  },
+  "languages": [
+    "TypeScript",
+    "JavaScript"
+  ],
+  "frameworks": [
+    "Pi extension API",
+    "GSD Core adapter"
+  ],
+  "tools": [
+    "Node.js >=22",
+    "TypeScript compiler",
+    "Node test runner",
+    "GitHub Actions",
+    "typebox"
+  ],
+  "build_system": "npm scripts: package.json scripts typecheck, build, test, test:live-pi",
+  "test_framework": "Node.js built-in test runner via package.json npm test",
+  "package_manager": "npm (package-lock.json present)",
+  "content_formats": [
+    "Markdown (README.md, docs, skills, prompts)",
+    "JSON (package.json, extension-manifest.json, tsconfig.json)",
+    "YAML (GitHub Actions workflow)"
+  ]
+}

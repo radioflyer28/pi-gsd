@@ -1,0 +1,77 @@
+{
+  "_meta": {
+    "updated_at": "2026-06-08T14:55:02.433Z",
+    "version": 2
+  },
+  "entries": {
+    "Pi tool gsd": {
+      "method": "TOOL",
+      "path": "gsd",
+      "params": [
+        "action",
+        "args",
+        "cwd",
+        "target",
+        "agent",
+        "skill",
+        "command"
+      ],
+      "file": "src/extension/index.ts",
+      "description": "Pi tool schema for status, doctor, run, and resolve-model actions registered by src/extension/register.ts."
+    },
+    "Pi command gsd-status": {
+      "method": "COMMAND",
+      "path": "/gsd-status",
+      "params": [],
+      "file": "src/extension/register.ts",
+      "description": "Shows pi-gsd status and optional integration detection."
+    },
+    "Pi command gsd-doctor": {
+      "method": "COMMAND",
+      "path": "/gsd-doctor",
+      "params": [],
+      "file": "src/extension/register.ts",
+      "description": "Shows pi-gsd diagnostics and integration guidance."
+    },
+    "Pi command gsd-run": {
+      "method": "COMMAND",
+      "path": "/gsd-run",
+      "params": [
+        "args"
+      ],
+      "file": "src/extension/register.ts",
+      "description": "Runs package-local gsd-tools through the thin wrapper."
+    },
+    "Pi command gsd-model": {
+      "method": "COMMAND",
+      "path": "/gsd-model",
+      "params": [
+        "agent",
+        "skill",
+        "command",
+        "target"
+      ],
+      "file": "src/extension/register.ts",
+      "description": "Resolves and optionally switches Pi model and thinking level for GSD routing targets."
+    },
+    "Dynamic GSD Core commands": {
+      "method": "COMMAND",
+      "path": "/gsd-*",
+      "params": [
+        "args"
+      ],
+      "file": "src/extension/gsd-core-commands.ts",
+      "description": "Discovers upstream GSD Core markdown commands and expands prompts for Pi sendUserMessage dispatch."
+    },
+    "Pi tool_call guard": {
+      "method": "EVENT",
+      "path": "tool_call",
+      "params": [
+        "toolName",
+        "input"
+      ],
+      "file": "src/extension/context-mode-guard.ts",
+      "description": "Registers a Pi tool_call event guard for context-mode tool usage around .planning and small source files."
+    }
+  }
+}

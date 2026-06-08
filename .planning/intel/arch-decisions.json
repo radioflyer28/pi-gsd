@@ -1,0 +1,61 @@
+{
+  "_meta": {
+    "updated_at": "2026-06-08T14:56:51.704Z",
+    "version": 2
+  },
+  "entries": {
+    "thin-pi-adapter": {
+      "decision": "pi-gsd exposes a thin Pi adapter over package-local upstream GSD Core instead of duplicating GSD workflow semantics.",
+      "evidence": [
+        "src/extension/index.ts",
+        "src/extension/register.ts",
+        "src/extension/dispatcher.ts",
+        "skills/pi-gsd/SKILL.md"
+      ]
+    },
+    "package-local-gsd-tools": {
+      "decision": "GSD commands are resolved through the bundled @opengsd/gsd-core dependency and package-local gsd-tools path.",
+      "evidence": [
+        "package.json",
+        "src/extension/capabilities.ts",
+        "src/extension/dispatcher.ts",
+        "tests/smoke.test.ts"
+      ]
+    },
+    "pi-registration-boundary": {
+      "decision": "Pi tool and command registration is centralized in registerPiGsdCore while the entry point only defines schema and installs registration/guards.",
+      "evidence": [
+        "src/extension/index.ts",
+        "src/extension/register.ts",
+        "extension-manifest.json"
+      ]
+    },
+    "optional-integration-detection": {
+      "decision": "Optional context-mode and pi-subagents behavior is detected at runtime rather than declared as npm dependencies.",
+      "evidence": [
+        "package.json",
+        "src/extension/capabilities.ts",
+        "src/extension/context-mode-guard.ts",
+        "tests/metadata.test.ts"
+      ]
+    },
+    "model-routing-in-pi": {
+      "decision": "Pi-native model and thinking resolution is handled by model-routing logic and exposed through the gsd tool resolve-model action plus /gsd-model command.",
+      "evidence": [
+        "src/extension/model-routing.ts",
+        "src/extension/register.ts",
+        "tests/model-routing.test.ts",
+        "tests/register.test.ts"
+      ]
+    },
+    "node22-typescript-test-flow": {
+      "decision": "Validation uses TypeScript strict checking and Node's built-in test runner with strip-types on tests.",
+      "evidence": [
+        "package.json",
+        "tsconfig.json",
+        ".github/workflows/ci.yml",
+        "tests/*.test.ts"
+      ]
+    }
+  }
+}

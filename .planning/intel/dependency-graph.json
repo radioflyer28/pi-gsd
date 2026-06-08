@@ -1,0 +1,105 @@
+{
+  "_meta": {
+    "updated_at": "2026-06-08T14:56:51.586Z",
+    "version": 3
+  },
+  "entries": {
+    "@opengsd/gsd-core": {
+      "version": ">=1.3.0",
+      "type": "production",
+      "used_by": [
+        "src/extension/capabilities.ts",
+        "src/extension/dispatcher.ts",
+        "src/extension/gsd-core-commands.ts",
+        "npm test"
+      ],
+      "invocation": "package-local gsd-tools child process"
+    },
+    "@earendil-works/pi-ai": {
+      "version": "*",
+      "type": "peer",
+      "used_by": [
+        "src/extension/index.ts"
+      ],
+      "invocation": "implicit Pi runtime import"
+    },
+    "@earendil-works/pi-coding-agent": {
+      "version": "*",
+      "type": "peer",
+      "used_by": [
+        "src/extension/index.ts",
+        "extension-manifest.json"
+      ],
+      "invocation": "implicit Pi extension host"
+    },
+    "typebox": {
+      "version": "*",
+      "type": "peer",
+      "used_by": [
+        "src/extension/index.ts",
+        "src/types/pi-sdk.d.ts"
+      ],
+      "invocation": "import"
+    },
+    "typescript": {
+      "version": "^6.0.3",
+      "type": "development",
+      "used_by": [
+        "npm run typecheck",
+        "npm run build",
+        "tsconfig.json"
+      ],
+      "invocation": "npm run typecheck; npm run build"
+    },
+    "@types/node": {
+      "version": "^24.10.0",
+      "type": "development",
+      "used_by": [
+        "src/extension/*.ts",
+        "tests/*.test.ts",
+        "scripts/live-pi-rpc-smoke.mjs",
+        "npm run typecheck"
+      ],
+      "invocation": "implicit TypeScript Node types"
+    },
+    "node:child_process": {
+      "version": "builtin",
+      "type": "production",
+      "used_by": [
+        "src/extension/dispatcher.ts",
+        "scripts/live-pi-rpc-smoke.mjs"
+      ],
+      "invocation": "import"
+    },
+    "node:fs": {
+      "version": "builtin",
+      "type": "production",
+      "used_by": [
+        "src/extension/capabilities.ts",
+        "src/extension/context-mode-guard.ts",
+        "src/extension/dispatcher.ts",
+        "src/extension/gsd-core-commands.ts",
+        "src/extension/model-routing.ts",
+        "tests/*.test.ts"
+      ],
+      "invocation": "import"
+    },
+    "node:test": {
+      "version": "builtin",
+      "type": "development",
+      "used_by": [
+        "tests/*.test.ts",
+        "npm test"
+      ],
+      "invocation": "npm test"
+    },
+    "GitHub Actions": {
+      "version": "ubuntu-latest with actions/checkout@v5 and actions/setup-node@v5",
+      "type": "development",
+      "used_by": [
+        ".github/workflows/ci.yml"
+      ],
+      "invocation": "push and pull_request workflow runs npm ci, npm run typecheck, npm run build, npm test"
+    }
+  }
+}

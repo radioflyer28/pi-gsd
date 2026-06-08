@@ -1,0 +1,310 @@
+{
+  "_meta": {
+    "updated_at": "2026-06-08T14:55:02.293Z",
+    "version": 2
+  },
+  "entries": {
+    "package.json": {
+      "exports": [],
+      "imports": [],
+      "type": "config"
+    },
+    "tsconfig.json": {
+      "exports": [],
+      "imports": [],
+      "type": "config"
+    },
+    "extension-manifest.json": {
+      "exports": [],
+      "imports": [],
+      "type": "config"
+    },
+    ".github/workflows/ci.yml": {
+      "exports": [],
+      "imports": [],
+      "type": "config"
+    },
+    "src/extension/index.ts": {
+      "exports": [
+        "registerPiGsdExtension"
+      ],
+      "imports": [
+        "@earendil-works/pi-coding-agent",
+        "@earendil-works/pi-ai",
+        "typebox",
+        "./context-mode-guard.ts",
+        "./register.ts"
+      ],
+      "type": "entry-point"
+    },
+    "src/extension/register.ts": {
+      "exports": [
+        "PiToolResult",
+        "RegisterablePiApi",
+        "RegisterPiGsdOptions",
+        "parseCommandArgs",
+        "registerPiGsdCore"
+      ],
+      "imports": [
+        "./dispatcher.ts",
+        "./capabilities.ts",
+        "./gsd-core-commands.ts",
+        "./model-routing.ts"
+      ],
+      "type": "module"
+    },
+    "src/extension/dispatcher.ts": {
+      "exports": [
+        "PiExecResult",
+        "PiExec",
+        "GsdAction",
+        "GsdParams",
+        "GsdExecutionContext",
+        "GsdDispatchResult",
+        "TextTruncator",
+        "GsdDispatcher",
+        "GsdDispatcherOptions",
+        "DEFAULT_MAX_OUTPUT_CHARS",
+        "DEFAULT_MAX_OUTPUT_LINES",
+        "resolveCwd",
+        "truncateTailText",
+        "findExternalGsdSkillPaths",
+        "formatCapabilities",
+        "createGsdDispatcher"
+      ],
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:os",
+        "node:path",
+        "./capabilities.ts",
+        "./model-routing.ts"
+      ],
+      "type": "module"
+    },
+    "src/extension/gsd-core-commands.ts": {
+      "exports": [
+        "GsdCoreCommand",
+        "GsdCoreCommandDiscoveryOptions",
+        "gsdCoreCommandsDir",
+        "discoverGsdCoreCommands",
+        "expandGsdCoreCommandPrompt"
+      ],
+      "imports": [
+        "node:fs",
+        "node:path",
+        "./capabilities.ts"
+      ],
+      "type": "module"
+    },
+    "src/extension/model-routing.ts": {
+      "exports": [
+        "ThinkingLevel",
+        "ModelFallback",
+        "RoutingTier",
+        "RoutingTargetType",
+        "ModelRoute",
+        "ModelRoutingConfig",
+        "PiModelLike",
+        "PiModelRegistryLike",
+        "ModelRoutingContext",
+        "ResolveModelRoutingRequest",
+        "ResolvedModelRouting",
+        "getModelRoutingConfigPath",
+        "loadModelRoutingConfig",
+        "modelRef",
+        "findPiModel",
+        "resolveModelRouting",
+        "formatResolvedModelRouting"
+      ],
+      "imports": [
+        "node:fs",
+        "node:path"
+      ],
+      "type": "module"
+    },
+    "src/extension/capabilities.ts": {
+      "exports": [
+        "CapabilityName",
+        "GsdMode",
+        "CapabilityPaths",
+        "Capabilities",
+        "ExistsProbe",
+        "CapabilityDetectionOptions",
+        "gsdToolsCommandNames",
+        "defaultPackageRoot",
+        "detectCapabilities"
+      ],
+      "imports": [
+        "node:fs",
+        "node:os",
+        "node:path",
+        "node:url"
+      ],
+      "type": "module"
+    },
+    "src/extension/context-mode-guard.ts": {
+      "exports": [
+        "evaluateContextModeToolCall",
+        "registerContextModeGuard"
+      ],
+      "imports": [
+        "node:fs",
+        "node:path"
+      ],
+      "type": "module"
+    },
+    "src/types/pi-sdk.d.ts": {
+      "exports": [
+        "ExtensionAPI",
+        "DEFAULT_MAX_BYTES",
+        "DEFAULT_MAX_LINES",
+        "formatSize",
+        "truncateTail",
+        "StringEnum"
+      ],
+      "imports": [
+        "typebox"
+      ],
+      "type": "type-def"
+    },
+    "scripts/live-pi-rpc-smoke.mjs": {
+      "exports": [],
+      "imports": [
+        "node:child_process",
+        "node:events",
+        "node:url",
+        "node:path"
+      ],
+      "type": "script"
+    },
+    "tests/capabilities.test.ts": {
+      "exports": [],
+      "imports": [
+        "node:assert/strict",
+        "node:path",
+        "node:test",
+        "../src/extension/capabilities.ts"
+      ],
+      "type": "test"
+    },
+    "tests/context-mode-guard.test.ts": {
+      "exports": [],
+      "imports": [
+        "node:assert/strict",
+        "node:path",
+        "node:test",
+        "../src/extension/context-mode-guard.ts",
+        "../src/extension/index.ts",
+        "./test-utils.ts"
+      ],
+      "type": "test"
+    },
+    "tests/dispatcher.test.ts": {
+      "exports": [],
+      "imports": [
+        "node:assert/strict",
+        "node:fs",
+        "node:os",
+        "node:path",
+        "node:test",
+        "../src/extension/dispatcher.ts",
+        "./test-utils.ts"
+      ],
+      "type": "test"
+    },
+    "tests/gsd-core-commands.test.ts": {
+      "exports": [],
+      "imports": [
+        "node:assert/strict",
+        "node:path",
+        "node:test",
+        "../src/extension/gsd-core-commands.ts"
+      ],
+      "type": "test"
+    },
+    "tests/metadata.test.ts": {
+      "exports": [],
+      "imports": [
+        "node:assert/strict",
+        "node:fs",
+        "node:path",
+        "node:test"
+      ],
+      "type": "test"
+    },
+    "tests/model-routing.test.ts": {
+      "exports": [],
+      "imports": [
+        "node:assert/strict",
+        "node:fs",
+        "node:os",
+        "node:path",
+        "node:test",
+        "../src/extension/model-routing.ts"
+      ],
+      "type": "test"
+    },
+    "tests/register.test.ts": {
+      "exports": [],
+      "imports": [
+        "node:assert/strict",
+        "node:fs",
+        "node:os",
+        "node:path",
+        "node:test",
+        "../src/extension/index.ts",
+        "../src/extension/register.ts",
+        "./test-utils.ts"
+      ],
+      "type": "test"
+    },
+    "tests/smoke.test.ts": {
+      "exports": [],
+      "imports": [
+        "node:assert/strict",
+        "node:path",
+        "node:test",
+        "../src/extension/capabilities.ts",
+        "../src/extension/dispatcher.ts"
+      ],
+      "type": "test"
+    },
+    "tests/test-utils.ts": {
+      "exports": [
+        "capabilities",
+        "mockPi",
+        "toolText"
+      ],
+      "imports": [
+        "../src/extension/capabilities.ts"
+      ],
+      "type": "test"
+    },
+    "README.md": {
+      "exports": [],
+      "imports": [],
+      "type": "data"
+    },
+    "docs/DESIGN.md": {
+      "exports": [],
+      "imports": [],
+      "type": "data"
+    },
+    "docs/USAGE.md": {
+      "exports": [],
+      "imports": [],
+      "type": "data"
+    },
+    "skills/pi-gsd/SKILL.md": {
+      "exports": [],
+      "imports": [],
+      "type": "data"
+    },
+    "prompts/gsd-review-loop.md": {
+      "exports": [],
+      "imports": [],
+      "type": "template"
+    }
+  }
+}
