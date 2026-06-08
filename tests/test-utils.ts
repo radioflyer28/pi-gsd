@@ -31,6 +31,7 @@ export function mockPi(
 ) {
   const tools: Record<string, any>[] = [];
   const commands = new Map<string, Record<string, any>>();
+  const handlers = new Map<string, Array<(event: any, ctx: any) => unknown>>();
   return {
     api: {
       registerTool(tool: Record<string, any>) {
@@ -42,10 +43,14 @@ export function mockPi(
       getAllTools() {
         return [...allTools, ...tools.map((tool) => ({ name: tool.name as string | undefined }))];
       },
+      on(eventName: string, handler: (event: any, ctx: any) => unknown) {
+        handlers.set(eventName, [...(handlers.get(eventName) ?? []), handler]);
+      },
       exec,
     },
     tools,
     commands,
+    handlers,
   };
 }
 

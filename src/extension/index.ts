@@ -8,6 +8,7 @@ import {
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 
+import { registerContextModeGuard } from "./context-mode-guard.ts";
 import { registerPiGsdCore } from "./register.ts";
 
 const TOOL_PARAMS = Type.Object(
@@ -49,4 +50,5 @@ export default function registerPiGsdExtension(pi: ExtensionAPI): void {
     parameters: TOOL_PARAMS,
     truncateOutput: truncateForPiTool,
   });
+  registerContextModeGuard(pi as Parameters<typeof registerContextModeGuard>[0]);
 }

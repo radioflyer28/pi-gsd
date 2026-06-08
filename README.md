@@ -66,6 +66,8 @@ GSD is not treated as a runtime-agnostic system install. Installing `pi-gsd` sho
 
 `context-mode` and `pi-subagents` are optional accelerators. `pi-gsd` detects and reports them, preferring active Pi tools such as `ctx_execute` and `subagent` over filesystem probes, then gives the model guidance to call `ctx_*` or `subagent` directly when useful. The `gsd` tool does not orchestrate subagents internally in v1.
 
+`pi-gsd` also installs a small context-mode guard. It blocks accidental wholesale indexing of `.planning/`, warns when context-mode is used for small files or durable planning artifacts, allows bulky/transient inputs like logs and reports without friction, and downgrades the `.planning/` block to a warning when the latest user request explicitly asks to index planning records.
+
 ## State Boundary
 
 `.planning/` is the project-local GSD record-keeping directory. GSD project plans, decisions, phase artifacts, verification notes, handoffs, and other durable workflow records belong there so other GSD skills/runtimes can read and contribute to the same project context.
