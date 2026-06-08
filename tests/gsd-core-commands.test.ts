@@ -46,6 +46,33 @@ test("command discovery returns no commands when upstream command directory is m
   assert.deepEqual(discoverGsdCoreCommands({ commandsDir: "missing", exists: () => false }), []);
 });
 
+test("config command prompt expansion injects Pi config update requirements", () => {
+  const commandPath = path.join(
+    "pkg",
+    "node_modules",
+    "@opengsd",
+    "gsd-core",
+    "commands",
+    "gsd",
+    "config.md",
+  );
+  const prompt = expandGsdCoreCommandPrompt(
+    {
+      slashName: "gsd-config",
+      coreName: "gsd:config",
+      description: "Config",
+      path: commandPath,
+      body: "Run gsd-tools query config-set foo bar",
+    },
+    "--advanced",
+  );
+
+  assert.match(prompt, /Pi runtime requirements for GSD config\/settings/);
+  assert.match(prompt, /\.planning\/config\.json/);
+  assert.match(prompt, /gsd\(\{ action: "run", args: \["query", \.\.\.\] \}\)/);
+  assert.match(prompt, /Do not rely on `command -v gsd-tools`/);
+});
+
 test("command prompt expansion preserves quoted arguments and rewrites package-local GSD Core references", () => {
   const commandPath = path.join(
     "pkg",

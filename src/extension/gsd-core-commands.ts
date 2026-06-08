@@ -114,6 +114,23 @@ function packageLocalGsdCoreRoot(commandPath: string): string {
   return path.resolve(path.dirname(commandPath), "..", "..", "gsd-core");
 }
 
+function piConfigCommandGuidance(command: GsdCoreCommand): string[] {
+  if (command.coreName !== "gsd:config" && command.coreName !== "gsd:settings") return [];
+
+  return [
+    "",
+    "## Pi runtime requirements for GSD config/settings",
+    "",
+    "This is a Pi runtime, so preserve the upstream GSD-visible result rather than Claude-specific mechanics:",
+    "",
+    "- Update GSD Core config in `.planning/config.json`, or `.planning/workstreams/<slug>/config.json` when GSD Core reports an active workstream.",
+    "- Use the pi-gsd tool for every `gsd-tools` operation: `gsd({ action: \"run\", args: [\"query\", ...] })`. Do not rely on `command -v gsd-tools`, global installs, or `~/.claude` paths.",
+    "- Use upstream GSD Core query names and semantics such as `config-ensure-section`, `config-path`, `config-get`, `config-set`, and `config-set-model-profile`; do not hand-edit unrelated config keys.",
+    "- If the upstream workflow asks for `AskUserQuestion`, ask the user naturally in Pi chat/UI and then write the selected values with GSD Core `config-set` queries.",
+    "- Treat `.pi-gsd/` as pi-gsd wrapper-private config only; `/gsd-config` and `/gsd-settings` configure upstream GSD under `.planning/`.",
+  ];
+}
+
 export function expandGsdCoreCommandPrompt(command: GsdCoreCommand, rawArgs: string): string {
   const args = rawArgs.trim();
   const words = shellWords(args);
@@ -126,6 +143,7 @@ export function expandGsdCoreCommandPrompt(command: GsdCoreCommand, rawArgs: str
     `Execute upstream GSD Core command \`${command.coreName}\` via pi-gsd.`,
     args ? `Arguments: ${args}` : "Arguments: <none>",
     `Package-local GSD Core root: ${coreRoot}`,
+    ...piConfigCommandGuidance(command),
     "",
     body.trim(),
   ].join("\n");

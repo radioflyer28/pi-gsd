@@ -48,6 +48,42 @@ test("registerPiGsdCore exposes upstream GSD Core commands as slash commands", a
   assert.match(pi.sentUserMessages[0], /node_modules.*@opengsd.*gsd-core.*gsd-core.*workflows.*plan-phase\.md/);
 });
 
+test("gsd-config profile command updates config through package-local dispatcher", async () => {
+  const pi = mockPi();
+  const calls: Array<{ args: string[]; cwd: string }> = [];
+  const dispatcher = {
+    status: async () => ({ text: "", details: { caps: capabilities("inline") } }),
+    doctor: async () => ({ text: "", details: { caps: capabilities("inline") } }),
+    resolveModel: async () => ({ text: "", details: { caps: capabilities("inline") } }),
+    initConfig: async () => ({ text: "", details: { caps: capabilities("inline") } }),
+    run: async (args: string[], cwd: string) => {
+      calls.push({ args, cwd });
+      return { text: "profile set", details: { caps: capabilities("inline") } };
+    },
+  };
+
+  registerPiGsdCore(pi.api, {
+    parameters: {},
+    dispatcher,
+    defaultCwd: "project-root",
+    gsdCoreCommands: [
+      {
+        slashName: "gsd-config",
+        coreName: "gsd:config",
+        description: "Configure GSD",
+        path: "node_modules/@opengsd/gsd-core/commands/gsd/config.md",
+        body: "Config $ARGUMENTS",
+      },
+    ],
+  });
+
+  const response = await pi.commands.get("gsd-config")!.handler("--profile inherit", { cwd: "project-root" });
+
+  assert.equal(response.text, "profile set");
+  assert.deepEqual(calls, [{ args: ["query", "config-set-model-profile", "inherit", "--raw"], cwd: path.resolve("project-root") }]);
+  assert.equal(pi.sentUserMessages.length, 0);
+});
+
 test("registered tool defaults to status when action is omitted", async () => {
   const pi = mockPi();
   registerPiGsdCore(pi.api, { parameters: {}, detect: () => capabilities("inline"), gsdCoreCommands: [] });

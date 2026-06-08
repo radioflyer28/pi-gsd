@@ -229,10 +229,29 @@ async function promptForFallbackModel(ctx: GsdExecutionContext | undefined, titl
   return choice;
 }
 
-function gsdCoreCommandHandler(command: GsdCoreCommand, pi: RegisterablePiApi) {
+function extractConfigProfile(rawArgs: string): string | null | undefined {
+  const args = parseCommandArgs(rawArgs);
+  const first = args[0];
+  if (!first) return undefined;
+  if (first === "--profile") return args[1] ?? null;
+  if (first.startsWith("--profile=")) return first.slice("--profile=".length) || null;
+  return undefined;
+}
+
+function gsdCoreCommandHandler(command: GsdCoreCommand, pi: RegisterablePiApi, dispatcher: GsdDispatcher, defaultCwd?: string) {
   return async (argsOrCtx: unknown, maybeCtx?: GsdExecutionContext & { isIdle?: () => boolean; ui?: { notify?: (message: string, level?: "info" | "warning" | "error") => void } }) => {
     const args = typeof argsOrCtx === "string" ? argsOrCtx : "";
     const ctx = (maybeCtx ?? argsOrCtx) as (GsdExecutionContext & { isIdle?: () => boolean; ui?: { notify?: (message: string, level?: "info" | "warning" | "error") => void } }) | undefined;
+
+    if (command.coreName === "gsd:config") {
+      const profile = extractConfigProfile(args);
+      if (profile === null) return { text: "Usage: /gsd-config --profile <quality|balanced|budget|adaptive|inherit>" };
+      if (profile) {
+        const cwd = resolveCwd({}, ctx, defaultCwd);
+        const result = await dispatcher.run(["query", "config-set-model-profile", profile, "--raw"], cwd);
+        return { text: result.text };
+      }
+    }
 
     if (!pi.sendUserMessage) {
       return { text: `pi-gsd could not dispatch /${command.slashName}; this Pi runtime does not expose sendUserMessage().` };
@@ -416,7 +435,7 @@ export function registerPiGsdCore(pi: RegisterablePiApi, options: RegisterPiGsdO
       description: command.argumentHint
         ? `${command.argumentHint} — ${command.description}`
         : command.description,
-      handler: gsdCoreCommandHandler(command, pi),
+      handler: gsdCoreCommandHandler(command, pi, dispatcher, options.defaultCwd),
     });
   }
 }
