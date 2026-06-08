@@ -38,4 +38,5 @@ test("package scripts use the built-in Node test runner and TypeScript compiler"
   assert.match(pkg.scripts.test, /node --experimental-strip-types --test tests\/\*\.test\.ts/);
   assert.equal(pkg.scripts.typecheck, "tsc --noEmit");
   assert.equal(pkg.scripts.build, "tsc -p tsconfig.json");
+  assert.equal(pkg.scripts["test:live-pi"], "node scripts/live-pi-rpc-smoke.mjs");
 });

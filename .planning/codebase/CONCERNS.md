@@ -162,9 +162,11 @@
 - Previous problem: The repository had scripts for typecheck, build, and test, but no detected `.github/workflows` or other CI configuration in the current tree.
 - Current mitigation: `.github/workflows/ci.yml` runs `npm ci`, `npm run typecheck`, `npm run build`, and `npm test` on pushes to `main` and pull requests.
 
-**No live Pi integration test harness:**
-- Problem: Tests use mocks for Pi APIs and a smoke test for package-local `gsd-tools`, but no automated test loads the extension in a real Pi runtime.
-- Blocks: Regressions in `pi.registerTool`, `pi.registerCommand`, `tool_call` hook behavior, UI selection, or live model registry behavior may only be found manually.
+**Live Pi integration smoke harness is optional/local:**
+- Status: Partially resolved on 2026-06-08.
+- Previous problem: Tests used mocks for Pi APIs and a smoke test for package-local `gsd-tools`, but no automated test loaded the extension in a real Pi runtime.
+- Current mitigation: `npm run test:live-pi` starts `pi --mode rpc` with `src/extension/index.ts`, calls RPC `get_commands`, and verifies core extension commands plus representative upstream `gsd-*` commands are registered from the extension. This covers extension loading and command-palette registration without requiring an LLM provider/API key.
+- Remaining gap: This smoke is not part of default CI because GitHub runners do not necessarily have the `pi` CLI installed/configured. It also does not exercise a full interactive TUI `/reload`, live UI selection, or model registry side effects.
 
 **No structured upstream command result API:**
 - Problem: `src/extension/dispatcher.ts` returns text for status/doctor/run output. The adapter cannot reason over typed upstream results.
@@ -173,10 +175,11 @@
 ## Test Coverage Gaps
 
 **Live extension lifecycle:**
-- What's not tested: Actual Pi extension loading, `/reload`, command palette registration, tool schema validation by Pi, and live UI notification/select behavior.
-- Files: `src/extension/index.ts`, `src/extension/register.ts`, `src/extension/context-mode-guard.ts`, `tests/register.test.ts`, `tests/context-mode-guard.test.ts`
+- What's now tested: Optional `npm run test:live-pi` covers actual Pi extension loading in RPC mode and command palette registration for pi-gsd integration commands plus representative upstream GSD commands.
+- What's still not tested: interactive TUI `/reload`, tool schema validation beyond extension startup, live UI notification/select behavior, and live model registry side effects.
+- Files: `src/extension/index.ts`, `src/extension/register.ts`, `src/extension/context-mode-guard.ts`, `tests/register.test.ts`, `tests/context-mode-guard.test.ts`, `scripts/live-pi-rpc-smoke.mjs`
 - Risk: Mock APIs in `tests/test-utils.ts` can diverge from Pi's runtime API.
-- Priority: High
+- Priority: Medium
 
 **Model routing edge cases:**
 - What's now tested: Invalid `.pi-gsd/model-routing.json`, `fallback: "error"`, `fallback: "omit"`, and session override precedence are covered in `tests/model-routing.test.ts`.
