@@ -14,7 +14,9 @@
     "commands": [
       "gsd-status",
       "gsd-doctor",
-      "gsd-run"
+      "gsd-run",
+      "gsd-model",
+      "gsd-*"
     ]
   }
 }

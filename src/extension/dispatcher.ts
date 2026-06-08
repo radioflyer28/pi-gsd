@@ -4,6 +4,15 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import { type Capabilities, defaultPackageRoot, detectCapabilities, type ExistsProbe } from "./capabilities.ts";
+import {
+  formatResolvedModelRouting,
+  modelRef,
+  resolveModelRouting,
+  type ModelRoutingContext,
+  type PiModelLike,
+  type PiModelRegistryLike,
+  type ResolveModelRoutingRequest,
+} from "./model-routing.ts";
 
 export type PiExecResult = {
   stdout?: string;
@@ -17,9 +26,9 @@ export type PiExec = (
   options?: { cwd?: string; signal?: AbortSignal },
 ) => Promise<PiExecResult | string>;
 
-export type GsdAction = "status" | "doctor" | "run";
+export type GsdAction = "status" | "doctor" | "run" | "resolve-model";
 
-export type GsdParams = {
+export type GsdParams = ResolveModelRoutingRequest & {
   action?: GsdAction;
   args?: string[];
   cwd?: string;
@@ -30,7 +39,10 @@ export type GsdExecutionContext = {
   hasUI?: boolean;
   ui?: {
     notify?: (message: string, level?: "info" | "warning" | "error") => void;
+    select?: (title: string, options: string[]) => Promise<string | undefined>;
   };
+  model?: PiModelLike;
+  modelRegistry?: PiModelRegistryLike;
 };
 
 export type GsdDispatchResult = {
@@ -43,9 +55,10 @@ export type GsdDispatchResult = {
 export type TextTruncator = (text: string) => string;
 
 export type GsdDispatcher = {
-  status(cwd: string): Promise<GsdDispatchResult>;
-  doctor(cwd: string): Promise<GsdDispatchResult>;
+  status(cwd: string, modelContext?: ModelRoutingContext): Promise<GsdDispatchResult>;
+  doctor(cwd: string, modelContext?: ModelRoutingContext): Promise<GsdDispatchResult>;
   run(args: string[], cwd: string, signal?: AbortSignal): Promise<GsdDispatchResult>;
+  resolveModel(request: ResolveModelRoutingRequest, cwd: string, modelContext?: ModelRoutingContext): Promise<GsdDispatchResult>;
 };
 
 export type GsdDispatcherOptions = {
@@ -114,8 +127,14 @@ export function findExternalGsdSkillPaths(homeDir = os.homedir()): string[] {
     .sort();
 }
 
-export function formatCapabilities(cwd: string, caps: Capabilities, exists: ExistsProbe = fs.existsSync): string {
+export function formatCapabilities(
+  cwd: string,
+  caps: Capabilities,
+  exists: ExistsProbe = fs.existsSync,
+  modelContext?: ModelRoutingContext,
+): string {
   const planningDir = path.join(cwd, ".planning");
+  const currentModel = modelRef(modelContext?.model);
   return [
     "# pi-gsd status",
     "",
@@ -126,6 +145,8 @@ export function formatCapabilities(cwd: string, caps: Capabilities, exists: Exis
     `- gsd-tools path: ${caps.paths.gsdTools ?? "not detected"}`,
     `- pi-subagents: ${caps.subagents ? "detected" : "not detected"}`,
     `- context-mode: ${caps.contextMode ? "detected" : "not detected"}`,
+    `- current Pi model: ${currentModel ?? "unknown"}`,
+    `- current Pi thinking: ${modelContext?.thinkingLevel ?? "unknown"}`,
   ].join("\n");
 }
 
@@ -152,9 +173,10 @@ function formatDoctor(
   caps: Capabilities,
   exists: ExistsProbe,
   externalSkillPaths: string[],
+  modelContext?: ModelRoutingContext,
 ): string {
   return [
-    formatCapabilities(cwd, caps, exists),
+    formatCapabilities(cwd, caps, exists, modelContext),
     ...formatExternalGsdSkillWarning(externalSkillPaths),
     "",
     "## Integration guidance",
@@ -162,8 +184,10 @@ function formatDoctor(
     "- Use upstream `gsd-core` behavior through `gsd-tools`; do not fork or duplicate GSD Core semantics.",
     "- Resolve `gsd-tools` from this Pi package's installed `@opengsd/gsd-core` dependency; do not use system-wide GSD installs for Pi execution.",
     "- If `gsd-core` needs a better machine-readable dispatcher for Pi, contribute that seam upstream and swap only the pi-gsd dispatcher adapter.",
+    "- Use `gsd({ action: \"resolve-model\", agent: \"gsd-planner\" })` before choosing a model for GSD-specific work.",
+    "- Keep GSD Core `resolve_model_ids` omitted/inherited under Pi unless you intentionally configured a non-Pi GSD runtime.",
     "- Use `subagent({ action: \"list\" })` before selecting pi-subagents agents or chains.",
-    "- Use `subagent` for large GSD planning, execution, review, or parallel verification when pi-subagents is detected.",
+    "- Use the shared pi-gsd model-routing result as the model input for `subagent` when pi-subagents is detected and an explicit model is available.",
     "- Do not make the `gsd` tool call `subagent` internally in v1.",
     "- Use `ctx_execute`, `ctx_execute_file`, `ctx_search`, or indexing only for bulky or transient context when context-mode is detected.",
     "- In combined mode, let the parent GSD flow use `subagent`; child agents may use `ctx_*` tools when context-mode is loaded.",
@@ -234,19 +258,28 @@ export function createGsdDispatcher(options: GsdDispatcherOptions = {}): GsdDisp
   }
 
   return {
-    async status(cwd) {
+    async status(cwd, modelContext) {
       const resultDetails = details(cwd);
       return {
-        text: formatCapabilities(cwd, resultDetails.caps, exists),
+        text: formatCapabilities(cwd, resultDetails.caps, exists, modelContext),
         details: resultDetails,
       };
     },
 
-    async doctor(cwd) {
+    async doctor(cwd, modelContext) {
       const resultDetails = details(cwd);
       const externalSkillPaths = (options.externalGsdSkillPaths ?? findExternalGsdSkillPaths)();
       return {
-        text: formatDoctor(cwd, resultDetails.caps, exists, externalSkillPaths),
+        text: formatDoctor(cwd, resultDetails.caps, exists, externalSkillPaths, modelContext),
+        details: resultDetails,
+      };
+    },
+
+    async resolveModel(request, cwd, modelContext) {
+      const resultDetails = details(cwd);
+      const resolved = resolveModelRouting(request, { cwd, ...modelContext });
+      return {
+        text: formatResolvedModelRouting(resolved),
         details: resultDetails,
       };
     },

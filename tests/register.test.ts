@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import test from "node:test";
 
@@ -6,20 +8,49 @@ import registerPiGsdExtension from "../src/extension/index.ts";
 import { parseCommandArgs, registerPiGsdCore } from "../src/extension/register.ts";
 import { capabilities, mockPi, toolText } from "./test-utils.ts";
 
-test("registerPiGsdCore registers one namespaced tool and three namespaced commands", () => {
+test("registerPiGsdCore registers one namespaced tool and four namespaced commands", () => {
   const pi = mockPi();
 
-  registerPiGsdCore(pi.api, { parameters: {}, detect: () => capabilities("inline") });
+  registerPiGsdCore(pi.api, { parameters: {}, detect: () => capabilities("inline"), gsdCoreCommands: [] });
 
   assert.equal(pi.tools.length, 1);
   assert.equal(pi.tools[0].name, "gsd");
   assert.equal(pi.tools[0].label, "GSD");
-  assert.deepEqual([...pi.commands.keys()].sort(), ["gsd-doctor", "gsd-run", "gsd-status"]);
+  assert.deepEqual([...pi.commands.keys()].sort(), ["gsd-doctor", "gsd-model", "gsd-run", "gsd-status"]);
+});
+
+test("registerPiGsdCore exposes upstream GSD Core commands as slash commands", async () => {
+  const pi = mockPi();
+  registerPiGsdCore(pi.api, {
+    parameters: {},
+    detect: () => capabilities("inline"),
+    gsdCoreCommands: [
+      {
+        slashName: "gsd-plan-phase",
+        coreName: "gsd:plan-phase",
+        description: "Create detailed phase plan",
+        argumentHint: "[phase]",
+        path: "node_modules/@opengsd/gsd-core/commands/gsd/plan-phase.md",
+        body: "Phase number: $ARGUMENTS\nFirst arg: $1\n@~/.claude/gsd-core/workflows/plan-phase.md",
+      },
+    ],
+  });
+
+  assert.ok(pi.commands.has("gsd-plan-phase"));
+  assert.match(pi.commands.get("gsd-plan-phase")!.description, /\[phase\].*Create detailed phase plan/);
+
+  await pi.commands.get("gsd-plan-phase")!.handler("1 --research", { isIdle: () => true });
+
+  assert.equal(pi.sentUserMessages.length, 1);
+  assert.match(pi.sentUserMessages[0], /Execute upstream GSD Core command `gsd:plan-phase`/);
+  assert.match(pi.sentUserMessages[0], /Phase number: 1 --research/);
+  assert.match(pi.sentUserMessages[0], /First arg: 1/);
+  assert.match(pi.sentUserMessages[0], /node_modules.*@opengsd.*gsd-core.*gsd-core.*workflows.*plan-phase\.md/);
 });
 
 test("registered tool defaults to status when action is omitted", async () => {
   const pi = mockPi();
-  registerPiGsdCore(pi.api, { parameters: {}, detect: () => capabilities("inline") });
+  registerPiGsdCore(pi.api, { parameters: {}, detect: () => capabilities("inline"), gsdCoreCommands: [] });
 
   const result = await pi.tools[0].execute("call-1", { cwd: process.cwd() });
 
@@ -30,7 +61,7 @@ test("registered tool defaults to status when action is omitted", async () => {
 test("registered tool resolves cwd from Pi context when params omit cwd", async () => {
   const pi = mockPi();
   const cwd = path.resolve("from-context");
-  registerPiGsdCore(pi.api, { parameters: {}, detect: () => capabilities("inline") });
+  registerPiGsdCore(pi.api, { parameters: {}, detect: () => capabilities("inline"), gsdCoreCommands: [] });
 
   const result = await pi.tools[0].execute("call-1", { action: "status" }, undefined, undefined, { cwd });
 
@@ -43,7 +74,7 @@ test("registered gsd-run command parses whitespace-separated args", async () => 
     calls.push(args);
     return { stdout: "ok", exitCode: 0 };
   });
-  registerPiGsdCore(pi.api, { parameters: {}, detect: () => capabilities("inline"), defaultCwd: process.cwd() });
+  registerPiGsdCore(pi.api, { parameters: {}, detect: () => capabilities("inline"), defaultCwd: process.cwd(), gsdCoreCommands: [] });
 
   const response = await pi.commands.get("gsd-run")!.handler("progress --json");
 
@@ -57,7 +88,7 @@ test("registered status and doctor commands ignore string args", async () => {
     calls.push(args);
     return "unexpected";
   });
-  registerPiGsdCore(pi.api, { parameters: {}, detect: () => capabilities("inline"), defaultCwd: process.cwd() });
+  registerPiGsdCore(pi.api, { parameters: {}, detect: () => capabilities("inline"), defaultCwd: process.cwd(), gsdCoreCommands: [] });
 
   const statusResponse = await pi.commands.get("gsd-status")!.handler("ignored args");
   const doctorResponse = await pi.commands.get("gsd-doctor")!.handler("ignored args");
@@ -70,7 +101,7 @@ test("registered status and doctor commands ignore string args", async () => {
 test("registered commands return text instead of sending large notifications through UI", async () => {
   const pi = mockPi();
   const notifications: Array<{ message: string; level?: string }> = [];
-  registerPiGsdCore(pi.api, { parameters: {}, detect: () => capabilities("inline"), defaultCwd: process.cwd() });
+  registerPiGsdCore(pi.api, { parameters: {}, detect: () => capabilities("inline"), defaultCwd: process.cwd(), gsdCoreCommands: [] });
 
   const response = await pi.commands.get("gsd-status")!.handler({
     cwd: process.cwd(),
@@ -108,6 +139,7 @@ test("registered detection uses active Pi tool inventory when available", async 
     exists: () => false,
     packageRoot: path.resolve("pkg"),
     defaultCwd: process.cwd(),
+    gsdCoreCommands: [],
   });
 
   const result = await pi.tools[0].execute("call-1", { action: "status", cwd: process.cwd() });
@@ -128,5 +160,96 @@ test("default extension registers the public tool with context-mode and subagent
   assert.ok(Array.isArray(pi.tools[0].promptGuidelines));
   assert.ok(pi.tools[0].promptGuidelines.some((line: string) => line.includes("context-mode")));
   assert.ok(pi.tools[0].promptGuidelines.some((line: string) => line.includes("pi-subagents")));
+  assert.ok(pi.tools[0].promptGuidelines.some((line: string) => line.includes("resolve-model")));
   assert.ok(pi.tools[0].parameters);
+});
+
+test("registered tool resolves Pi-native model routing with inherit fallback", async () => {
+  const pi = mockPi();
+  registerPiGsdCore(pi.api, { parameters: {}, detect: () => capabilities("inline"), defaultCwd: process.cwd(), gsdCoreCommands: [] });
+
+  const result = await pi.tools[0].execute(
+    "call-1",
+    { action: "resolve-model", agent: "gsd-planner" },
+    undefined,
+    undefined,
+    {
+      cwd: process.cwd(),
+      model: { provider: "openai", id: "gpt-5.3-codex" },
+      modelRegistry: { getAvailable: () => [{ provider: "openai", id: "gpt-5.3-codex" }] },
+    },
+  );
+
+  assert.match(toolText(result), /# pi-gsd model routing/);
+  assert.match(toolText(result), /target: `gsd-planner`/);
+  assert.match(toolText(result), /tier: heavy/);
+  assert.match(toolText(result), /resolved model: openai\/gpt-5\.3-codex/);
+  assert.match(toolText(result), /resolved thinking: xhigh/);
+});
+
+test("gsd-model command applies inherited route thinking without forcing a model", async () => {
+  const pi = mockPi();
+  registerPiGsdCore(pi.api, { parameters: {}, detect: () => capabilities("inline"), defaultCwd: process.cwd(), gsdCoreCommands: [] });
+  const model = { provider: "openai", id: "gpt-5.5" };
+
+  const response = await pi.commands.get("gsd-model")!.handler("agent gsd-planner", {
+    cwd: process.cwd(),
+    model: { provider: "openai", id: "gpt-5.3-codex" },
+    modelRegistry: {
+      getAvailable: () => [model],
+      find: (provider: string, id: string) => (provider === "openai" && id === "gpt-5.5" ? model : undefined),
+    },
+  });
+
+  // Defaults inherit model, so command leaves model unchanged but still applies planner thinking.
+  assert.match(response.text, /Model left unchanged/);
+  assert.equal(pi.thinkingLevel, "xhigh");
+});
+
+test("gsd-model command can prompt for a fallback model when configured model is unavailable", async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-gsd-routing-"));
+  fs.mkdirSync(path.join(cwd, ".pi-gsd"));
+  fs.writeFileSync(
+    path.join(cwd, ".pi-gsd", "model-routing.json"),
+    JSON.stringify({ fallback: "prompt", tiers: { heavy: { model: "openai/missing", thinking: "xhigh" } } }),
+  );
+
+  const pi = mockPi();
+  registerPiGsdCore(pi.api, { parameters: {}, detect: () => capabilities("inline"), defaultCwd: cwd, gsdCoreCommands: [] });
+  const goodModel = { provider: "openai", id: "good" };
+
+  const response = await pi.commands.get("gsd-model")!.handler("agent gsd-planner", {
+    cwd,
+    hasUI: true,
+    ui: {
+      select: async () => "openai/good",
+    },
+    model: { provider: "openai", id: "current" },
+    modelRegistry: {
+      getAvailable: () => [goodModel],
+      find: (provider: string, id: string) => (provider === "openai" && id === "good" ? goodModel : undefined),
+    },
+  });
+
+  assert.match(response.text, /Switched Pi model to openai\/good/);
+  assert.equal(pi.selectedModel, goodModel);
+  assert.equal(pi.thinkingLevel, "xhigh");
+
+  const resolvedAgain = await pi.tools[0].execute(
+    "call-2",
+    { action: "resolve-model", agent: "gsd-planner" },
+    undefined,
+    undefined,
+    {
+      cwd,
+      model: { provider: "openai", id: "current" },
+      modelRegistry: {
+        getAvailable: () => [goodModel],
+        find: (provider: string, id: string) => (provider === "openai" && id === "good" ? goodModel : undefined),
+      },
+    },
+  );
+
+  assert.match(toolText(resolvedAgain), /source: session\.gsd-planner/);
+  assert.match(toolText(resolvedAgain), /resolved model: openai\/good/);
 });

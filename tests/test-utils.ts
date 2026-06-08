@@ -29,9 +29,12 @@ export function mockPi(
   exec?: (...args: unknown[]) => Promise<unknown>,
   allTools: Array<{ name?: string }> = [],
 ) {
+  let thinkingLevel: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" = "medium";
+  let selectedModel: unknown;
   const tools: Record<string, any>[] = [];
   const commands = new Map<string, Record<string, any>>();
   const handlers = new Map<string, Array<(event: any, ctx: any) => unknown>>();
+  const sentUserMessages: string[] = [];
   return {
     api: {
       registerTool(tool: Record<string, any>) {
@@ -43,6 +46,19 @@ export function mockPi(
       getAllTools() {
         return [...allTools, ...tools.map((tool) => ({ name: tool.name as string | undefined }))];
       },
+      getThinkingLevel() {
+        return thinkingLevel;
+      },
+      setThinkingLevel(level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh") {
+        thinkingLevel = level;
+      },
+      async setModel(model: unknown) {
+        selectedModel = model;
+        return true;
+      },
+      sendUserMessage(message: string) {
+        sentUserMessages.push(message);
+      },
       on(eventName: string, handler: (event: any, ctx: any) => unknown) {
         handlers.set(eventName, [...(handlers.get(eventName) ?? []), handler]);
       },
@@ -51,6 +67,13 @@ export function mockPi(
     tools,
     commands,
     handlers,
+    sentUserMessages,
+    get thinkingLevel() {
+      return thinkingLevel;
+    },
+    get selectedModel() {
+      return selectedModel;
+    },
   };
 }
 

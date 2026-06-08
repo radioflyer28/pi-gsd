@@ -7,7 +7,7 @@ This guide is for Pi users and maintainers who want to run GSD workflows from Pi
 1. Install `pi-gsd` as a Pi package.
 2. Restart Pi or run `/reload`.
 3. Run `/gsd-status`.
-4. If status looks healthy, use `/gsd-run <command>` for upstream GSD Core commands.
+4. If status looks healthy, use upstream GSD Core slash commands like `/gsd-plan-phase 1`, or `/gsd-run <command>` for low-level `gsd-tools` calls.
 
 For local development:
 
@@ -26,6 +26,22 @@ pi install npm:pi-subagents
 Install optional accelerators separately because they provide their own Pi tools, hooks, skills, prompts, and commands.
 
 ## Commands
+
+### `/gsd-<core-command> ...`
+
+pi-gsd exposes upstream GSD Core commands dynamically as Pi slash commands without copying them into pi-gsd.
+
+Examples:
+
+```text
+/gsd-plan-phase 1
+/gsd-execute-phase 1
+/gsd-verify-work
+```
+
+The command list is loaded from the package-local `@opengsd/gsd-core/commands/gsd/*.md` files. The Pi command name is the GSD Core command name with `gsd:` converted to `gsd-`, so `gsd:plan-phase` becomes `/gsd-plan-phase`.
+
+When invoked, pi-gsd sends the upstream command prompt to the current Pi agent turn with the provided arguments substituted. pi-gsd does not maintain its own fork of GSD skills or workflow text.
 
 ### `/gsd-status`
 
@@ -73,9 +89,23 @@ Examples:
 
 Arguments are parsed with shell-like quoting so spaces inside quoted values are preserved.
 
+### `/gsd-model [agent|skill|command] <target>`
+
+Resolves the Pi-native model/thinking route for a GSD target and explicitly applies it to the current Pi session when an explicit configured model is available.
+
+Examples:
+
+```text
+/gsd-model agent gsd-planner
+/gsd-model skill gsd-plan-phase
+/gsd-model command gsd:execute-phase
+```
+
+If the route inherits or omits the model, the current Pi model is left unchanged. Thinking level is applied when the route resolves to a concrete Pi thinking level.
+
 ## Agent tool usage
 
-Agents can call the `gsd` tool directly with one of three actions.
+Agents can call the `gsd` tool directly with one of four actions.
 
 ### Status
 
@@ -96,6 +126,16 @@ Agents can call the `gsd` tool directly with one of three actions.
 ```
 
 The `cwd` parameter can be provided when the command should run against a different project directory.
+
+### Resolve model routing
+
+```json
+{ "action": "resolve-model", "agent": "gsd-planner" }
+```
+
+Other accepted selectors are `skill`, `command`, or a generic `target`.
+
+The result includes a Pi-native resolved model, thinking level, warnings, and a `subagent` block. When `subagent.model` is present, pass it to the `subagent` tool. When absent, omit `model` so pi-subagents inherits/defaults naturally.
 
 ## How context-mode should be used
 
@@ -134,6 +174,49 @@ When a small file must be edited or understood exactly, use Pi's normal `read` a
 
 The guard is intentionally conservative. It blocks only the riskiest accidental pattern and uses warnings for cases where there may be legitimate reasons to continue.
 
+## Model routing
+
+GSD Core has its own static model catalog, but Pi is provider/runtime agnostic. For Pi workflows, keep GSD Core model IDs omitted/inherited unless you intentionally configure a non-Pi GSD runtime.
+
+`pi-gsd` reads optional project-local routing from:
+
+```text
+.pi-gsd/model-routing.json
+```
+
+Minimal example:
+
+```json
+{
+  "fallback": "inherit",
+  "default": { "model": "inherit", "thinking": "inherit" },
+  "tiers": {
+    "heavy": { "model": "openai/gpt-5.5", "thinking": "xhigh" },
+    "standard": { "model": "openai/gpt-5.3-codex", "thinking": "high" },
+    "light": { "model": "openai/gpt-5.4-mini", "thinking": "medium" }
+  },
+  "agents": {
+    "gsd-planner": { "tier": "heavy" },
+    "gsd-phase-researcher": { "tier": "standard" },
+    "gsd-plan-checker": { "tier": "light" }
+  },
+  "skills": {
+    "gsd-plan-phase": { "tier": "heavy" }
+  }
+}
+```
+
+Fallback policies:
+
+| Policy | Behavior |
+| --- | --- |
+| `inherit` | Use the current Pi session model. Default. |
+| `omit` | Return no model so the downstream runtime inherits/defaults. |
+| `error` | Surface an error instead of silently falling back. |
+| `prompt` | Ask the user to choose an available Pi model when `/gsd-model` is used. |
+
+If a configured model is not available in Pi, `inherit` keeps the current Pi model and emits a warning. `prompt` is opt-in; when the user chooses a fallback model, `pi-gsd` remembers that answer for the target agent/skill/command for the current Pi extension session and subsequent `resolve-model` calls use the remembered model.
+
 ## How pi-subagents should be used
 
 Use `pi-subagents` for work that benefits from fresh context or parallelism:
@@ -151,6 +234,14 @@ Before selecting agents or chains, ask Pi to list available subagents:
 ```
 
 `pi-gsd` does not call subagents internally. The parent agent should decide when delegation is useful.
+
+Before delegating GSD-specific work, resolve routing through the shared resolver:
+
+```json
+{ "action": "resolve-model", "agent": "gsd-planner" }
+```
+
+Then consume the returned `subagent` block. Pass `subagent.model` only when present; otherwise omit `model` and let pi-subagents inherit/default.
 
 ## State and artifact rules
 

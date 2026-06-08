@@ -15,8 +15,9 @@ When a GSD command is needed:
 
 1. Use the `gsd` tool with `action: "status"` or `action: "doctor"` to inspect the wrapper and GSD project records.
 2. Use `gsd` with `action: "run"` for thin dispatcher-backed calls to the package-local upstream `gsd-tools` installed with `pi-gsd`.
-3. If `pi-subagents` is available and the task is large, call `subagent({ action: "list" })` before selecting agents or chains, then use `subagent` directly for fresh-context planning, execution, or review.
-4. If `context-mode` is available, use `ctx_execute`, `ctx_execute_file`, `ctx_search`, or indexing only when it materially reduces noisy context for the current GSD task.
+3. Before choosing a model for GSD-specific work, use `gsd` with `action: "resolve-model"` for the relevant `agent`, `skill`, `command`, or `target`.
+4. If `pi-subagents` is available and the task is large, call `subagent({ action: "list" })` before selecting agents or chains. Consume the shared pi-gsd model-routing result: pass `subagent.model` only when present; otherwise omit model to inherit/default.
+5. If `context-mode` is available, use `ctx_execute`, `ctx_execute_file`, `ctx_search`, or indexing only when it materially reduces noisy context for the current GSD task.
 
 ## Boundaries
 
@@ -31,5 +32,6 @@ When a GSD command is needed:
 - Do not rely on a system-wide GSD install; Pi uses the `@opengsd/gsd-core` dependency installed with `pi-gsd`.
 - Do not treat `context-mode` or `pi-subagents` as nested npm dependencies of `pi-gsd`; they must be installed/enabled as Pi packages.
 - Do not make the `gsd` tool orchestrate pi-subagents internally in v1.
+- Keep GSD Core `resolve_model_ids` omitted/inherited under Pi unless the user intentionally configured a non-Pi GSD runtime; Pi-native model routing belongs in `.pi-gsd/model-routing.json` and the `resolve-model` action.
 - Do not run nested subagents unless the selected subagent is explicitly intended to orchestrate.
 - Prefer concise summaries with file paths to durable artifacts.

@@ -33,12 +33,14 @@ Commands:
 - `/gsd-status`
 - `/gsd-doctor`
 - `/gsd-run <args>`
+- `/gsd-model [agent|skill|command] <target>`
 
-The tool supports three actions:
+The tool supports four actions:
 
 - `status(cwd)`
 - `doctor(cwd)`
 - `run(args, cwd, signal)`
+- `resolve-model(agent|skill|command|target, cwd)`
 
 The command names are intentionally namespaced. Avoid adding broad names like `/status`, `/doctor`, or `/run`.
 
@@ -128,7 +130,9 @@ Do not put Pi-wrapper-specific material in `.planning/`. Other GSD skills and ru
 
 Do not create `.gsd/` for `pi-gsd` state. That name can collide with other GSD-family tools.
 
-There is no default `pi-gsd` project-state directory. If wrapper-private project metadata becomes necessary later, reserve `.pi-gsd/` for that narrow documented use. Do not use it for canonical GSD project records.
+`pi-gsd` may use `.pi-gsd/` for wrapper-private project metadata. The first such file is `.pi-gsd/model-routing.json`, which maps GSD agents/skills/commands to Pi-native model IDs, thinking levels, and fallback policy. This file is intentionally not a GSD Core artifact and should not be stored in `.planning/`.
+
+Model routing supports an opt-in `prompt` fallback. Prompt answers are remembered in memory per target for the current Pi extension session only; they are not written to `.planning/` or `.pi-gsd/` unless the user edits config explicitly.
 
 ## V1 decisions
 
@@ -138,6 +142,7 @@ There is no default `pi-gsd` project-state directory. If wrapper-private project
 - Keep `context-mode` and `pi-subagents` as separately installed Pi packages.
 - Do not ship packaged `gsd.planner`, `gsd.executor`, or `gsd.reviewer` agents in v1.
 - Keep context-mode usage selective and guardrail-driven rather than adding a broad aggressiveness configuration.
+- Keep GSD Core `resolve_model_ids` omitted/inherited under Pi by default; Pi-native model resolution belongs to `pi-gsd` because Pi can run arbitrary providers and custom model IDs.
 
 ## Adding new behavior
 

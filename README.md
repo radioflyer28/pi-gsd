@@ -4,16 +4,27 @@
 
 It does **not** reimplement GSD. It registers a small Pi tool, a few slash commands, a skill, and guardrails that help Pi use GSD safely while keeping workflow behavior in upstream GSD Core.
 
-## What it provides
+## Why?
+- I want to use GSD inside Pi.
+- I want to be able to use OpenRouter with GSD and Pi.
+- I don't want to use GSDv2:
+  - GSDv2 breaks the `.planning/` directory schemas used by GSDv1, thus abandoning all interoperability between devs using GSDv1 with the agent runtime of their choice.
+  - While it is still Pi, it is modified to the extent it's effectively a new agent runtime entirely, thus drifting too far from Pi and making it harder to modify and co-exist with other extensions.
 
+## What it provides
+- **Upstream GSD Core slash-command interface** exposed dynamically from the bundled `@opengsd/gsd-core/commands/gsd/*.md`; use `/gsd-plan-phase 1`, `/gsd-execute-phase 1`, etc. without duplicating command content inside pi-gsd.
 - **`gsd` tool** for Pi agents:
   - `status` — inspect wrapper capabilities and local GSD project state.
   - `doctor` — show diagnostics and integration guidance.
   - `run` — dispatch to package-local upstream `gsd-tools`.
+  - `resolve-model` — resolve Pi-native model/thinking guidance for GSD agents, skills, or commands.
 - **Slash commands**:
-  - `/gsd-status`
-  - `/gsd-doctor`
-  - `/gsd-run <args>`
+  - Dynamic upstream GSD Core commands as `/gsd-<command>`, sourced at runtime from `@opengsd/gsd-core` (for example `/gsd-plan-phase 1`).
+  - pi-gsd integration commands:
+    - `/gsd-status`
+    - `/gsd-doctor`
+    - `/gsd-run <args>`
+    - `/gsd-model [agent|skill|command] <target>`
 - **`pi-gsd` skill** that tells agents how to use GSD from Pi without inventing parallel workflow semantics.
 - **Optional integration awareness** for:
   - `context-mode` — context-efficient processing for bulky logs, broad scans, generated reports, and repeated search/filtering.
@@ -86,6 +97,18 @@ Typical output reports:
 
 Use this when commands are unavailable, optional integrations are not detected, or you need to confirm the state boundary rules.
 
+### Resolve GSD model routing
+
+Pi is provider/runtime agnostic, so `pi-gsd` keeps GSD Core model IDs omitted/inherited by default and resolves Pi-native model guidance itself.
+
+```json
+{ "action": "resolve-model", "agent": "gsd-planner" }
+```
+
+Optional project-local routing lives in `.pi-gsd/model-routing.json`. If no route is configured, `pi-gsd` inherits the current Pi model and applies tier-based thinking defaults.
+
+Use `/gsd-model agent gsd-planner` to explicitly switch the current Pi model/thinking level when the route resolves to an available configured model. Set `fallback: "prompt"` to ask the user to choose an available Pi model when a configured route is unavailable; chosen fallback models are remembered per target for the current Pi extension session.
+
 ### Run upstream GSD Core
 
 ```text
@@ -130,13 +153,15 @@ When `pi-subagents` is loaded, `pi-gsd` reports it and instructs agents to call 
 
 The `gsd` tool does not call subagents internally. Large planning, execution, review, and verification work should use `pi-subagents` directly from the parent agent when appropriate.
 
+Before delegating GSD-specific work, agents should call `gsd({ action: "resolve-model", agent: "gsd-planner" })` and consume the returned `subagent` block. Pass `subagent.model` only when present; otherwise omit `model` so pi-subagents inherits/defaults naturally.
+
 ## State boundary
 
 `.planning/` is the canonical project-local GSD record directory. Plans, decisions, phase artifacts, verification notes, and handoffs belong there when they follow GSD-compatible artifact conventions.
 
 Do not use context-mode as durable GSD memory. Context-mode caches and indexes are useful for the current investigation, but they are not the source of truth.
 
-Do not create or assume `.gsd/`; that name can collide with other GSD-family tools. If `pi-gsd` ever needs wrapper-private project metadata, reserve `.pi-gsd/` for that narrow documented use.
+Do not create or assume `.gsd/`; that name can collide with other GSD-family tools. Wrapper-private Pi adapter metadata belongs in `.pi-gsd/`; currently this is limited to optional `.pi-gsd/model-routing.json`.
 
 ## Development
 

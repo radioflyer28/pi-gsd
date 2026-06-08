@@ -2,6 +2,11 @@ declare module "@earendil-works/pi-coding-agent" {
   export type ExtensionAPI = {
     registerTool?: (tool: Record<string, unknown>) => void;
     registerCommand?: (name: string, command: Record<string, unknown>) => void;
+    getAllTools?: () => Array<{ name?: string }>;
+    getThinkingLevel?: () => "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+    setThinkingLevel?: (level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh") => void;
+    setModel?: (model: unknown) => Promise<boolean>;
+    sendUserMessage?: (message: string, options?: { deliverAs?: "steer" | "followUp" }) => void;
     exec?: (
       command: string,
       args?: string[],

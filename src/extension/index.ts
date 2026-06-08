@@ -13,7 +13,7 @@ import { registerPiGsdCore } from "./register.ts";
 
 const TOOL_PARAMS = Type.Object(
   {
-    action: StringEnum(["status", "doctor", "run"] as const),
+    action: StringEnum(["status", "doctor", "run", "resolve-model"] as const),
     args: Type.Optional(
       Type.Array(Type.String(), {
         description: "Arguments passed to gsd-tools for action=run.",
@@ -22,6 +22,26 @@ const TOOL_PARAMS = Type.Object(
     cwd: Type.Optional(
       Type.String({
         description: "Working directory. Defaults to the current Pi session cwd.",
+      }),
+    ),
+    target: Type.Optional(
+      Type.String({
+        description: "GSD target to resolve for action=resolve-model, such as gsd-planner or gsd-plan-phase.",
+      }),
+    ),
+    agent: Type.Optional(
+      Type.String({
+        description: "GSD agent id to resolve, such as gsd-planner.",
+      }),
+    ),
+    skill: Type.Optional(
+      Type.String({
+        description: "GSD skill/command id to resolve, such as gsd-plan-phase or gsd:plan-phase.",
+      }),
+    ),
+    command: Type.Optional(
+      Type.String({
+        description: "GSD command id to resolve.",
       }),
     ),
   },
