@@ -48,7 +48,7 @@ pi install npm:pi-subagents
 
 This matters because both packages provide Pi resources, not just importable libraries. Their extensions, tools, hooks, skills, prompts, and commands need to be discovered and enabled by Pi itself. A nested install under `pi-gsd/node_modules` would not be a reliable signal that those resources are active in the running Pi session.
 
-`pi-gsd` therefore treats them as externally installed optional capabilities: detect them, report the mode, and guide the parent model to call their public tools directly when present.
+`pi-gsd` therefore treats them as externally installed optional capabilities: detect them, report the mode, and guide the parent model to call their public tools directly when present. When Pi exposes active tool inventory, `pi-gsd` treats public tools such as `ctx_execute` and `subagent` as the strongest signal that those integrations are usable; filesystem probes are fallback signals for runtimes that do not expose tool inventory.
 
 ### pi-subagents
 
@@ -73,6 +73,7 @@ Do not use context-mode as durable project memory. `.planning/` is the project-l
 ## V1 Decisions
 
 - Start with the package-local `gsd-tools` CLI seam behind `GsdDispatcher`.
+- Use `pi.exec` when available, but fall back to Node child-process spawning for the package-local `gsd-tools` binary so `/gsd-run` still works in Pi modes that do not expose `pi.exec`.
 - Publish `@opengsd/gsd-core` as a regular dependency of `pi-gsd`; consuming upstream as a dependency avoids forking while matching GSD's per-runtime install model.
 - Do not list `context-mode` or `pi-subagents` as `optionalDependencies`; document them as recommended optional Pi packages installed with `pi install`.
 - Do not ship packaged `gsd.planner`, `gsd.executor`, or `gsd.reviewer` agents in v1.

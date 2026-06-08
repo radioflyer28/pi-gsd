@@ -8,7 +8,7 @@ import {
   resolveCwd,
   type TextTruncator,
 } from "./dispatcher.ts";
-import { type Capabilities, type ExistsProbe } from "./capabilities.ts";
+import { detectCapabilities, type Capabilities, type ExistsProbe } from "./capabilities.ts";
 
 type TextContent = {
   type: "text";
@@ -25,6 +25,7 @@ export type PiToolResult = {
 export type RegisterablePiApi = {
   registerTool?: (tool: Record<string, unknown>) => void;
   registerCommand?: (name: string, command: Record<string, unknown>) => void;
+  getAllTools?: () => Array<{ name?: string }>;
   exec?: PiExec;
 };
 
@@ -44,6 +45,27 @@ function toToolResult(text: string, details: PiToolResult["details"]): PiToolRes
     content: [{ type: "text", text }],
     details,
   };
+}
+
+function activeToolNames(pi: RegisterablePiApi): string[] {
+  try {
+    return pi.getAllTools?.().map((tool) => tool.name).filter((name): name is string => Boolean(name)) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+function createRuntimeAwareDetector(
+  pi: RegisterablePiApi,
+  options: { exists?: ExistsProbe; packageRoot?: string },
+): (cwd: string) => Capabilities {
+  return (cwd: string) =>
+    detectCapabilities({
+      cwd,
+      exists: options.exists,
+      packageRoot: options.packageRoot,
+      activeToolNames: activeToolNames(pi),
+    });
 }
 
 async function executeGsd(
@@ -67,26 +89,64 @@ async function executeGsd(
   return toToolResult(result.text, result.details);
 }
 
+export function parseCommandArgs(input: string): string[] {
+  const args: string[] = [];
+  let current = "";
+  let quote: "'" | '"' | null = null;
+  let escaping = false;
+
+  for (const char of input) {
+    if (escaping) {
+      current += char;
+      escaping = false;
+      continue;
+    }
+
+    if (char === "\\" && quote !== "'") {
+      escaping = true;
+      continue;
+    }
+
+    if ((char === '"' || char === "'") && (!quote || quote === char)) {
+      quote = quote ? null : char;
+      continue;
+    }
+
+    if (/\s/.test(char) && !quote) {
+      if (current) {
+        args.push(current);
+        current = "";
+      }
+      continue;
+    }
+
+    current += char;
+  }
+
+  if (escaping) current += "\\";
+  if (current) args.push(current);
+  return args;
+}
+
 function commandHandler(dispatcher: GsdDispatcher, action: GsdAction, defaultCwd?: string) {
   return async (argsOrCtx: unknown, maybeCtx?: GsdExecutionContext) => {
     const ctx = (maybeCtx ?? argsOrCtx) as GsdExecutionContext | undefined;
-    const args =
-      typeof argsOrCtx === "string" && action === "run"
-        ? argsOrCtx.split(/\s+/).filter(Boolean)
-        : [];
+    const args = typeof argsOrCtx === "string" && action === "run" ? parseCommandArgs(argsOrCtx) : [];
     const result = await executeGsd(dispatcher, { action, args }, undefined, ctx, defaultCwd);
     const text = result.content[0]?.text ?? "";
-
-    if (ctx?.hasUI && typeof ctx.ui?.notify === "function") {
-      ctx.ui.notify(text, "info");
-      return undefined;
-    }
 
     return { text };
   };
 }
 
 export function registerPiGsdCore(pi: RegisterablePiApi, options: RegisterPiGsdOptions): void {
+  const detect =
+    options.detect ??
+    ((cwd: string) =>
+      createRuntimeAwareDetector(pi, {
+        exists: options.exists,
+        packageRoot: options.packageRoot,
+      })(cwd));
   const dispatcher =
     options.dispatcher ??
     createGsdDispatcher({
@@ -95,7 +155,7 @@ export function registerPiGsdCore(pi: RegisterablePiApi, options: RegisterPiGsdO
       packageRoot: options.packageRoot,
       gsdToolsCommand: options.gsdToolsCommand,
       truncateOutput: options.truncateOutput,
-      detect: options.detect,
+      detect,
     });
 
   pi.registerTool?.({

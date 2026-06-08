@@ -25,7 +25,10 @@ export function capabilities(mode: GsdMode, overrides: Partial<Capabilities> = {
   };
 }
 
-export function mockPi(exec?: (...args: unknown[]) => Promise<unknown>) {
+export function mockPi(
+  exec?: (...args: unknown[]) => Promise<unknown>,
+  allTools: Array<{ name?: string }> = [],
+) {
   const tools: Record<string, any>[] = [];
   const commands = new Map<string, Record<string, any>>();
   return {
@@ -35,6 +38,9 @@ export function mockPi(exec?: (...args: unknown[]) => Promise<unknown>) {
       },
       registerCommand(name: string, command: Record<string, any>) {
         commands.set(name, command);
+      },
+      getAllTools() {
+        return [...allTools, ...tools.map((tool) => ({ name: tool.name as string | undefined }))];
       },
       exec,
     },

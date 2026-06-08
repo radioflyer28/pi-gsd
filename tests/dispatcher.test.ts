@@ -154,12 +154,16 @@ test("dispatcher run truncates large command output through the configured trunc
   assert.match(result.text, /^truncated:/);
 });
 
-test("dispatcher run returns a clear message when pi.exec is unavailable", async () => {
-  const dispatcher = createGsdDispatcher({ detect: () => capabilities("inline") });
+test("dispatcher run falls back to Node spawn when pi.exec is unavailable", async () => {
+  const dispatcher = createGsdDispatcher({
+    gsdToolsCommand: process.execPath,
+    detect: () => capabilities("inline"),
+  });
 
-  const result = await dispatcher.run([], process.cwd());
+  const result = await dispatcher.run(["--version"], process.cwd());
 
-  assert.match(result.text, /did not expose pi\.exec\(\)/);
+  assert.match(result.text, /gsd-tools exited with 0/);
+  assert.match(result.text, /v\d+\.\d+\.\d+/);
 });
 
 test("dispatcher run refuses to use system-wide gsd-tools when package-local gsd-tools is missing", async () => {

@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -142,6 +143,42 @@ function formatExecResult(result: PiExecResult | string): string {
   return [`gsd-tools exited with ${exitCode}`, output ? `\n${output}` : ""].join("\n");
 }
 
+async function execWithNodeSpawn(
+  command: string,
+  args: string[],
+  options: { cwd: string; signal?: AbortSignal },
+): Promise<PiExecResult> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: options.cwd,
+      shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(command),
+      windowsHide: true,
+      signal: options.signal,
+    });
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout?.setEncoding("utf8");
+    child.stderr?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr?.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.on("error", (error) => {
+      if (options.signal?.aborted) {
+        resolve({ stdout, stderr: stderr || "Cancelled while running.", exitCode: 130 });
+        return;
+      }
+      reject(error);
+    });
+    child.on("close", (exitCode) => {
+      resolve({ stdout, stderr, exitCode: exitCode ?? 0 });
+    });
+  });
+}
+
 export function createGsdDispatcher(options: GsdDispatcherOptions = {}): GsdDispatcher {
   const exists = options.exists ?? fs.existsSync;
   const packageRoot = options.packageRoot ?? defaultPackageRoot(exists);
@@ -178,16 +215,6 @@ export function createGsdDispatcher(options: GsdDispatcherOptions = {}): GsdDisp
         };
       }
 
-      if (!options.exec) {
-        return {
-          text: [
-            "pi-gsd cannot run GSD commands because this Pi runtime did not expose pi.exec().",
-            "Use `gsd-tools` directly from the shell, or add a stable upstream SDK dispatcher and call it from this wrapper.",
-          ].join("\n"),
-          details: resultDetails,
-        };
-      }
-
       const command = options.gsdToolsCommand ?? resultDetails.caps.paths.gsdTools;
       if (!command) {
         return {
@@ -199,7 +226,8 @@ export function createGsdDispatcher(options: GsdDispatcherOptions = {}): GsdDisp
         };
       }
 
-      const result = await options.exec(command, args, { cwd, signal });
+      const exec = options.exec ?? execWithNodeSpawn;
+      const result = await exec(command, args, { cwd, signal });
       return {
         text: truncateOutput(formatExecResult(result)),
         details: resultDetails,

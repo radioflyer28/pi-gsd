@@ -3,7 +3,7 @@ import * as path from "node:path";
 import test from "node:test";
 
 import registerPiGsdExtension from "../src/extension/index.ts";
-import { registerPiGsdCore } from "../src/extension/register.ts";
+import { parseCommandArgs, registerPiGsdCore } from "../src/extension/register.ts";
 import { capabilities, mockPi, toolText } from "./test-utils.ts";
 
 test("registerPiGsdCore registers one namespaced tool and three namespaced commands", () => {
@@ -67,7 +67,7 @@ test("registered status and doctor commands ignore string args", async () => {
   assert.match(doctorResponse.text, /## Integration guidance/);
 });
 
-test("registered commands notify UI and return undefined when UI is available", async () => {
+test("registered commands return text instead of sending large notifications through UI", async () => {
   const pi = mockPi();
   const notifications: Array<{ message: string; level?: string }> = [];
   registerPiGsdCore(pi.api, { parameters: {}, detect: () => capabilities("inline"), defaultCwd: process.cwd() });
@@ -82,10 +82,39 @@ test("registered commands notify UI and return undefined when UI is available", 
     },
   });
 
-  assert.equal(response, undefined);
-  assert.equal(notifications.length, 1);
-  assert.match(notifications[0].message, /# pi-gsd status/);
-  assert.equal(notifications[0].level, "info");
+  assert.match(response.text, /# pi-gsd status/);
+  assert.deepEqual(notifications, []);
+});
+
+test("parseCommandArgs preserves quoted and escaped gsd-run arguments", () => {
+  assert.deepEqual(parseCommandArgs('phase add "user login" --tag foo\\ bar'), [
+    "phase",
+    "add",
+    "user login",
+    "--tag",
+    "foo bar",
+  ]);
+  assert.deepEqual(parseCommandArgs("run 'single quoted value' plain"), [
+    "run",
+    "single quoted value",
+    "plain",
+  ]);
+});
+
+test("registered detection uses active Pi tool inventory when available", async () => {
+  const pi = mockPi(undefined, [{ name: "ctx_execute" }, { name: "subagent" }]);
+  registerPiGsdCore(pi.api, {
+    parameters: {},
+    exists: () => false,
+    packageRoot: path.resolve("pkg"),
+    defaultCwd: process.cwd(),
+  });
+
+  const result = await pi.tools[0].execute("call-1", { action: "status", cwd: process.cwd() });
+
+  assert.equal(result.details.caps.mode, "delegated-ctx");
+  assert.match(toolText(result), /context-mode: detected/);
+  assert.match(toolText(result), /pi-subagents: detected/);
 });
 
 test("default extension registers the public tool with context-mode and subagent guidance", () => {

@@ -127,3 +127,20 @@ test("capability detection prefers project-local optional packages over user-sco
   assert.equal(caps.mode, "ctx-inline");
   assert.equal(caps.paths.contextMode, projectContextMode);
 });
+
+test("capability detection trusts active Pi tool inventory over filesystem probes", () => {
+  const caps = detectCapabilities({
+    cwd: path.resolve("repo"),
+    homeDir: path.resolve("home"),
+    packageRoot: path.resolve("pkg"),
+    exists: () => false,
+    activeToolNames: ["ctx_execute", "subagent"],
+    candidatePaths: { gsdCore: [], gsdTools: [] },
+  });
+
+  assert.equal(caps.mode, "delegated-ctx");
+  assert.equal(caps.subagents, true);
+  assert.equal(caps.contextMode, true);
+  assert.equal(caps.paths.subagents, "<active-tool:subagent>");
+  assert.equal(caps.paths.contextMode, "<active-tool:ctx_execute>");
+});

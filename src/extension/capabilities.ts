@@ -25,6 +25,7 @@ export type CapabilityDetectionOptions = {
   packageRoot?: string;
   exists?: ExistsProbe;
   candidatePaths?: Partial<Record<CapabilityName, string[]>>;
+  activeToolNames?: string[];
 };
 
 function gsdToolCommandNames(): string[] {
@@ -94,6 +95,10 @@ function firstExisting(candidates: string[], exists: ExistsProbe): string | null
   return null;
 }
 
+function hasAnyTool(activeToolNames: Set<string>, names: string[]): boolean {
+  return names.some((name) => activeToolNames.has(name));
+}
+
 export function detectCapabilities(options: CapabilityDetectionOptions = {}): Capabilities {
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const homeDir = options.homeDir ?? os.homedir();
@@ -107,11 +112,25 @@ export function detectCapabilities(options: CapabilityDetectionOptions = {}): Ca
     contextMode: options.candidatePaths?.contextMode ?? defaults.contextMode,
   };
 
+  const activeToolNames = new Set(options.activeToolNames ?? []);
+  const hasActiveSubagentTool = hasAnyTool(activeToolNames, ["subagent"]);
+  const hasActiveContextModeTool = hasAnyTool(activeToolNames, [
+    "ctx_execute",
+    "ctx_execute_file",
+    "ctx_search",
+    "ctx_index",
+    "ctx_batch_execute",
+  ]);
+
   const paths: CapabilityPaths = {
     gsdCore: firstExisting(candidates.gsdCore, exists),
     gsdTools: firstExisting(candidates.gsdTools, exists),
-    subagents: firstExisting(candidates.subagents, exists),
-    contextMode: firstExisting(candidates.contextMode, exists),
+    subagents: hasActiveSubagentTool
+      ? "<active-tool:subagent>"
+      : firstExisting(candidates.subagents, exists),
+    contextMode: hasActiveContextModeTool
+      ? "<active-tool:ctx_execute>"
+      : firstExisting(candidates.contextMode, exists),
   };
 
   const hasSubagents = Boolean(paths.subagents);

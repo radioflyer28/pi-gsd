@@ -12,6 +12,7 @@ This package should stay thin: Pi-specific command/tool registration lives here,
 - Detect optional local accelerators:
   - `pi-subagents` for fresh-context or parallel work.
   - `context-mode` for selective context-efficient execution/search.
+- Prefer Pi's active tool inventory when available, so `context-mode`/`pi-subagents` are reported when their public tools are actually loaded, with filesystem probes as a fallback.
 - Degrade gracefully when optional accelerators are not installed.
 
 ## Initial Commands
@@ -27,7 +28,7 @@ This package should stay thin: Pi-specific command/tool registration lives here,
   - `doctor`
   - `run`
 
-`run` is currently a CLI seam. It calls the package-local `gsd-tools` binary from `pi-gsd`'s installed `@opengsd/gsd-core` dependency when the Pi runtime exposes `pi.exec`.
+`run` is currently a CLI seam. It calls the package-local `gsd-tools` binary from `pi-gsd`'s installed `@opengsd/gsd-core` dependency. It uses Pi's `pi.exec` when available and falls back to Node's child-process spawn for the package-local binary when `pi.exec` is unavailable.
 
 Internally, all runtime calls go through a small `GsdDispatcher` boundary. The first dispatcher implementation calls package-local `gsd-tools`; if `gsd-core` later exposes a stable SDK dispatcher, `pi-gsd` should swap only that adapter layer and keep the Pi tool/command API stable.
 
@@ -63,7 +64,7 @@ This wrapper intentionally does not copy GSD skills or reimplement phase logic. 
 
 GSD is not treated as a runtime-agnostic system install. Installing `pi-gsd` should install the GSD Core version used by the Pi runtime. Updating that dependency updates Pi's GSD behavior without forking upstream.
 
-`context-mode` and `pi-subagents` are optional accelerators. `pi-gsd` detects and reports them, then gives the model guidance to call `ctx_*` or `subagent` directly when useful. The `gsd` tool does not orchestrate subagents internally in v1.
+`context-mode` and `pi-subagents` are optional accelerators. `pi-gsd` detects and reports them, preferring active Pi tools such as `ctx_execute` and `subagent` over filesystem probes, then gives the model guidance to call `ctx_*` or `subagent` directly when useful. The `gsd` tool does not orchestrate subagents internally in v1.
 
 ## State Boundary
 
