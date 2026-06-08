@@ -1,81 +1,172 @@
 # pi-gsd
 
-Pi extension wrapper around its own installed `@opengsd/gsd-core` dependency.
+`pi-gsd` is a thin [Pi](https://github.com/earendil-works/pi-coding-agent) package that exposes upstream `@opengsd/gsd-core` workflows inside Pi.
 
-This package should stay thin: Pi-specific command/tool registration lives here, while GSD workflow behavior stays upstream in the `@opengsd/gsd-core` dependency installed with `pi-gsd`.
+It does **not** reimplement GSD. It registers a small Pi tool, a few slash commands, a skill, and guardrails that help Pi use GSD safely while keeping workflow behavior in upstream GSD Core.
 
-## Goals
+## What it provides
 
-- Call upstream GSD Core instead of forking it.
-- Install the Pi runtime's own `@opengsd/gsd-core` copy as a package dependency rather than relying on a system-wide GSD install.
-- Keep Pi-facing namespaced commands and tools under `gsd_*` / `/gsd-*`.
-- Detect optional local accelerators:
-  - `pi-subagents` for fresh-context or parallel work.
-  - `context-mode` for selective context-efficient execution/search.
-- Prefer Pi's active tool inventory when available, so `context-mode`/`pi-subagents` are reported when their public tools are actually loaded, with filesystem probes as a fallback.
-- Degrade gracefully when optional accelerators are not installed.
+- **`gsd` tool** for Pi agents:
+  - `status` — inspect wrapper capabilities and local GSD project state.
+  - `doctor` — show diagnostics and integration guidance.
+  - `run` — dispatch to package-local upstream `gsd-tools`.
+- **Slash commands**:
+  - `/gsd-status`
+  - `/gsd-doctor`
+  - `/gsd-run <args>`
+- **`pi-gsd` skill** that tells agents how to use GSD from Pi without inventing parallel workflow semantics.
+- **Optional integration awareness** for:
+  - `context-mode` — context-efficient processing for bulky logs, broad scans, generated reports, and repeated search/filtering.
+  - `pi-subagents` — fresh-context or parallel planning, execution, and review.
+- **Context-mode guardrails** that prevent the most common detrimental uses while leaving legitimate computed processing available.
 
-## Initial Commands
+## Design principles
 
-- `/gsd-status` shows wrapper capability and GSD project record status.
-- `/gsd-doctor` reports detected integration paths.
-- `/gsd-run <args>` calls upstream `gsd-tools` through the adapter dispatcher.
-
-## Initial Tool
-
-- `gsd` executes a small set of wrapper actions:
-  - `status`
-  - `doctor`
-  - `run`
-
-`run` is currently a CLI seam. It calls the package-local `gsd-tools` binary from `pi-gsd`'s installed `@opengsd/gsd-core` dependency. It uses Pi's `pi.exec` when available and falls back to Node's child-process spawn for the package-local binary when `pi.exec` is unavailable.
-
-Internally, all runtime calls go through a small `GsdDispatcher` boundary. The first dispatcher implementation calls package-local `gsd-tools`; if `gsd-core` later exposes a stable SDK dispatcher, `pi-gsd` should swap only that adapter layer and keep the Pi tool/command API stable.
+1. **Stay thin.** Pi-specific registration belongs here; GSD workflow semantics stay in `@opengsd/gsd-core`.
+2. **Use package-local GSD Core.** `pi-gsd` installs and uses its own `@opengsd/gsd-core` dependency instead of relying on a system-wide GSD install.
+3. **Keep durable GSD state in `.planning/`.** Context-mode indexes are search/cache support, not canonical project memory.
+4. **Detect optional accelerators, do not vendor them.** `context-mode` and `pi-subagents` must be installed as Pi packages so their own tools, hooks, skills, and prompts are active.
+5. **Prefer real runtime signals.** When Pi exposes active tool inventory, `pi-gsd` trusts tools like `ctx_execute` and `subagent` over filesystem probes.
 
 ## Installation
 
-Install the optional Pi accelerators as Pi packages, then install `pi-gsd`:
+### Local development install
+
+From this repository:
+
+```bash
+npm install
+pi install . -l
+```
+
+The `-l` flag writes the package to project-local Pi settings. Restart Pi or run `/reload` after changing extension code.
+
+### Optional accelerators
+
+Install these separately as Pi packages when you want the additional behavior:
 
 ```bash
 pi install npm:context-mode
 pi install npm:pi-subagents
-pi install npm:pi-gsd
 ```
 
-For local development:
+They are intentionally not dependencies of `pi-gsd`. A nested npm install would place files on disk but would not guarantee that Pi loaded their public tools and hooks.
 
-```bash
-pi install . -l
+### Git or npm install
+
+This repository is currently configured as a private package. If you install it from GitHub, use Pi's git package source for the repository/ref you want. If it is later published to npm, it can be installed with Pi's npm package source.
+
+## Usage
+
+### Check the wrapper
+
+```text
+/gsd-status
 ```
 
-`context-mode` and `pi-subagents` are intentionally not `optionalDependencies` of `pi-gsd`. They are independent Pi extensions with their own tools, hooks, skills, prompts, and package manifests. Installing them as nested npm dependencies under `pi-gsd` would put files on disk, but it would not necessarily enable those extensions in Pi. `pi-gsd` detects them from Pi's installed package locations and degrades gracefully when either is absent.
+or ask the agent to call:
+
+```json
+{ "action": "status" }
+```
+
+Typical output reports:
+
+- current working directory
+- whether `.planning/` is present
+- detected mode: `inline`, `ctx-inline`, `delegated`, or `delegated-ctx`
+- package-local `gsd-tools` path
+- whether `context-mode` and `pi-subagents` are available
+
+### Diagnose setup
+
+```text
+/gsd-doctor
+```
+
+Use this when commands are unavailable, optional integrations are not detected, or you need to confirm the state boundary rules.
+
+### Run upstream GSD Core
+
+```text
+/gsd-run progress
+/gsd-run phase list
+/gsd-run roadmap --json
+```
+
+The `run` action dispatches to the package-local `gsd-tools` binary. It uses Pi's `pi.exec` when available and falls back to Node child-process spawning for the package-local binary when `pi.exec` is unavailable.
+
+Quoted arguments are supported:
+
+```text
+/gsd-run phase add "User login"
+```
+
+## Optional integration behavior
+
+### context-mode
+
+When `context-mode` is loaded, `pi-gsd` guides agents to use `ctx_*` tools only when they materially reduce noisy context, such as:
+
+- large logs or test output
+- broad repository scans
+- web or API documentation retrieval
+- generated reports that need search/filtering
+- repeated local search during one investigation
+
+`pi-gsd` also registers a lightweight context-mode guard:
+
+- Blocks accidental wholesale indexing of `.planning/`.
+- Warns, but does not block, if the latest user request explicitly asks to index `.planning/`.
+- Warns for individual `.planning` artifact indexing.
+- Warns for small source/planning files where `read` or `edit` is usually clearer.
+- Allows small data files, logs, reports, build output, coverage output, and explicit computed extraction tasks without friction.
+
+This guard is meant to prevent accidental misuse, not to stop deliberate user-directed workflows.
+
+### pi-subagents
+
+When `pi-subagents` is loaded, `pi-gsd` reports it and instructs agents to call `subagent({ action: "list" })` before selecting agents or chains.
+
+The `gsd` tool does not call subagents internally. Large planning, execution, review, and verification work should use `pi-subagents` directly from the parent agent when appropriate.
+
+## State boundary
+
+`.planning/` is the canonical project-local GSD record directory. Plans, decisions, phase artifacts, verification notes, and handoffs belong there when they follow GSD-compatible artifact conventions.
+
+Do not use context-mode as durable GSD memory. Context-mode caches and indexes are useful for the current investigation, but they are not the source of truth.
+
+Do not create or assume `.gsd/`; that name can collide with other GSD-family tools. If `pi-gsd` ever needs wrapper-private project metadata, reserve `.pi-gsd/` for that narrow documented use.
 
 ## Development
 
 ```bash
 npm install
 npm run typecheck
+npm run build
 npm test
 ```
 
-## Design Notes
+The test suite uses Node's built-in test runner with TypeScript stripping.
 
-This wrapper intentionally does not copy GSD skills or reimplement phase logic. If `gsd-core` needs a better machine-readable dispatcher for Pi, that should be contributed upstream and consumed here.
+## Troubleshooting
 
-GSD is not treated as a runtime-agnostic system install. Installing `pi-gsd` should install the GSD Core version used by the Pi runtime. Updating that dependency updates Pi's GSD behavior without forking upstream.
+### `context-mode` or `pi-subagents` is not detected
 
-`context-mode` and `pi-subagents` are optional accelerators. `pi-gsd` detects and reports them, preferring active Pi tools such as `ctx_execute` and `subagent` over filesystem probes, then gives the model guidance to call `ctx_*` or `subagent` directly when useful. The `gsd` tool does not orchestrate subagents internally in v1.
+1. Confirm the package is installed through Pi, not nested under `pi-gsd` only.
+2. Restart Pi or run `/reload`.
+3. Run `/gsd-status` again.
+4. Run `/gsd-doctor` for detailed integration guidance.
 
-`pi-gsd` also installs a small context-mode guard. It blocks accidental wholesale indexing of `.planning/`, warns when context-mode is used for small source/planning files where read/edit is usually clearer, allows small data files plus bulky/transient inputs like logs and reports without friction, and downgrades the `.planning/` block to a warning when the latest user request explicitly asks to index planning records.
+### `/gsd-run` cannot find `gsd-tools`
 
-## State Boundary
+Run `npm install` in this package and verify that `@opengsd/gsd-core` is installed. `pi-gsd` intentionally refuses to fall back to a system-wide `gsd-tools` binary because that could run a different GSD version than the Pi package expects.
 
-`.planning/` is the project-local GSD record-keeping directory. GSD project plans, decisions, phase artifacts, verification notes, handoffs, and other durable workflow records belong there so other GSD skills/runtimes can read and contribute to the same project context.
+### New code is not reflected in Pi
 
-Do not put Pi-wrapper-specific material in `.planning/`. `pi-gsd` should write there only when it is producing normal GSD-compatible records that other GSD skills/runtimes can understand.
+Run `/reload` after editing extension code, or restart Pi. Local package installs point at the source tree, but Pi still needs to reload resources and extension modules.
 
-There is no default `pi-gsd` project-state directory. If the wrapper later needs project-local metadata that is fundamentally not a GSD record, reserve `.pi-gsd/` for that narrow adapter-private use and document the contents first. Do not use it for canonical GSD project records. Do not use `.gsd/`; that name belongs to other GSD-family tools and may collide with GSDv2 or upstream runtime state.
+## More documentation
 
-`context-mode` should only be used when it is beneficial for the immediate task: large logs, broad repo scans, web/docs retrieval, bulky generated output, or repeated local search during one investigation.
-
-Do not treat context-mode as canonical GSD state. Durable GSD project records belong in `.planning/` only when they follow GSD-compatible artifact conventions. Wrapper-private metadata should use user/global Pi config or OS temp/cache locations unless there is a concrete reason it must be project-local.
+- [Design notes](docs/DESIGN.md)
+- [Usage guide](docs/USAGE.md)
