@@ -235,6 +235,21 @@ test("dispatcher run refuses to use system-wide gsd-tools when package-local gsd
   assert.match(result.text, /do not rely on a system-wide GSD install/);
 });
 
+test("dispatcher run resolves cancellation after spawn starts", async () => {
+  const dispatcher = createGsdDispatcher({
+    gsdToolsCommand: process.execPath,
+    detect: () => capabilities("inline"),
+  });
+  const controller = new AbortController();
+  const running = dispatcher.run(["-e", "setInterval(() => {}, 1000)"], process.cwd(), controller.signal);
+
+  setTimeout(() => controller.abort(), 50);
+  const result = await running;
+
+  assert.match(result.text, /gsd-tools exited with 130/);
+  assert.match(result.text, /Cancelled while running|AbortError|The operation was aborted/i);
+});
+
 test("dispatcher run returns before dispatch when aborted", async () => {
   let called = false;
   const controller = new AbortController();

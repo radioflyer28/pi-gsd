@@ -255,6 +255,7 @@ function gsdModelCommandHandler(defaultCwd: string | undefined, pi: Registerable
 
     if (resolved.error) return { text: [...lines, `Error: ${resolved.error}`].join("\n") };
 
+    let modelSwitchFailed = false;
     if (resolved.recommendedAction.mode === "prompt-user") {
       const choice = await promptForFallbackModel(ctx, `Choose fallback model for ${resolved.target}`);
       if (choice && ctx?.modelRegistry && pi.setModel) {
@@ -262,6 +263,7 @@ function gsdModelCommandHandler(defaultCwd: string | undefined, pi: Registerable
         if (!found) return { text: [...lines, `Error: selected model ${choice} is no longer available.`].join("\n") };
         const switched = await pi.setModel(found);
         if (switched) sessionModelOverrides.set(resolved.target, choice);
+        modelSwitchFailed = !switched;
         lines.push(switched ? `Switched Pi model to ${choice}. Remembered for ${resolved.target} in this session.` : `Could not switch to ${choice}; Pi reported missing auth or unavailable model.`);
       } else {
         lines.push("Model left unchanged; prompt was unavailable, cancelled, or user chose inherit.");
@@ -271,14 +273,17 @@ function gsdModelCommandHandler(defaultCwd: string | undefined, pi: Registerable
       if (!found) return { text: [...lines, `Error: resolved model ${resolved.model} is no longer available.`].join("\n") };
       const switched = await pi.setModel(found);
       if (switched) sessionModelOverrides.set(resolved.target, resolved.model);
+      modelSwitchFailed = !switched;
       lines.push(switched ? `Switched Pi model to ${resolved.model}. Remembered for ${resolved.target} in this session.` : `Could not switch to ${resolved.model}; Pi reported missing auth or unavailable model.`);
     } else {
       lines.push("Model left unchanged; this route inherits/omits the model.");
     }
 
-    if (resolved.thinking !== "inherit" && pi.setThinkingLevel) {
+    if (resolved.thinking !== "inherit" && pi.setThinkingLevel && !modelSwitchFailed) {
       pi.setThinkingLevel(resolved.thinking);
       lines.push(`Set Pi thinking level to ${resolved.thinking}.`);
+    } else if (resolved.thinking !== "inherit" && modelSwitchFailed) {
+      lines.push(`Thinking level left unchanged because model switch failed.`);
     }
 
     return { text: lines.join("\n") };

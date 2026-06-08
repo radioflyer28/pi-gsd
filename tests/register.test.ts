@@ -206,6 +206,55 @@ test("gsd-model command applies inherited route thinking without forcing a model
   assert.equal(pi.thinkingLevel, "xhigh");
 });
 
+test("gsd-model command reports unavailable prompt UI without changing model", async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-gsd-routing-"));
+  fs.mkdirSync(path.join(cwd, ".pi-gsd"));
+  fs.writeFileSync(
+    path.join(cwd, ".pi-gsd", "model-routing.json"),
+    JSON.stringify({ fallback: "prompt", tiers: { heavy: { model: "openai/missing", thinking: "xhigh" } } }),
+  );
+
+  const pi = mockPi();
+  registerPiGsdCore(pi.api, { parameters: {}, detect: () => capabilities("inline"), defaultCwd: cwd, gsdCoreCommands: [] });
+
+  const response = await pi.commands.get("gsd-model")!.handler("agent gsd-planner", {
+    cwd,
+    hasUI: false,
+    model: { provider: "openai", id: "current" },
+    modelRegistry: { getAvailable: () => [] },
+  });
+
+  assert.match(response.text, /Model left unchanged; prompt was unavailable/);
+  assert.equal(pi.selectedModel, undefined);
+  assert.equal(pi.thinkingLevel, "xhigh");
+});
+
+test("gsd-model command leaves thinking unchanged when explicit model switch fails", async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-gsd-routing-"));
+  fs.mkdirSync(path.join(cwd, ".pi-gsd"));
+  fs.writeFileSync(
+    path.join(cwd, ".pi-gsd", "model-routing.json"),
+    JSON.stringify({ agents: { "gsd-planner": { model: "openai/good", thinking: "xhigh" } } }),
+  );
+
+  const pi = mockPi();
+  pi.api.setModel = async () => false;
+  registerPiGsdCore(pi.api, { parameters: {}, detect: () => capabilities("inline"), defaultCwd: cwd, gsdCoreCommands: [] });
+  const goodModel = { provider: "openai", id: "good" };
+
+  const response = await pi.commands.get("gsd-model")!.handler("agent gsd-planner", {
+    cwd,
+    modelRegistry: {
+      getAvailable: () => [goodModel],
+      find: (provider: string, id: string) => (provider === "openai" && id === "good" ? goodModel : undefined),
+    },
+  });
+
+  assert.match(response.text, /Could not switch to openai\/good/);
+  assert.match(response.text, /Thinking level left unchanged/);
+  assert.equal(pi.thinkingLevel, "medium");
+});
+
 test("gsd-model command can prompt for a fallback model when configured model is unavailable", async () => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-gsd-routing-"));
   fs.mkdirSync(path.join(cwd, ".pi-gsd"));

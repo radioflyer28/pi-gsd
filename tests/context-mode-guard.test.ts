@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import * as path from "node:path";
 import test from "node:test";
 
 import { evaluateContextModeToolCall, registerContextModeGuard } from "../src/extension/context-mode-guard.ts";
@@ -45,6 +46,31 @@ test("context-mode guard warns instead of blocking when user explicitly requeste
 
   assert.equal(decision.action, "warn");
   assert.match(decision.reason, /explicitly requested/);
+});
+
+test("context-mode guard blocks planning root indexing through symlink-resolved paths", () => {
+  const cwd = path.resolve("repo");
+  const decision = evaluateContextModeToolCall(
+    { toolName: "ctx_index", input: { path: "planning-link" } },
+    { cwd },
+    {
+      stat: () => dirStats(),
+      realpath: () => path.join(cwd, ".planning"),
+    },
+  );
+
+  assert.equal(decision.action, "block");
+  assert.match(decision.reason, /wholesale context-mode indexing of \.planning/);
+});
+
+test("context-mode guard treats .planning path casing defensively", () => {
+  const decision = evaluateContextModeToolCall(
+    { toolName: "ctx_index", input: { path: ".PLANNING" } },
+    { cwd: process.cwd() },
+    { stat: () => dirStats(), realpath: () => null },
+  );
+
+  assert.equal(decision.action, "block");
 });
 
 test("context-mode guard warns on individual .planning artifacts without blocking", () => {

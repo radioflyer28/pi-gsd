@@ -107,11 +107,11 @@ function pathSegments(candidate: string): string[] {
 }
 
 function isPlanningPath(candidate: string): boolean {
-  return pathSegments(candidate).includes(".planning");
+  return pathSegments(candidate).some((segment) => segment.toLowerCase() === ".planning");
 }
 
 function isPlanningRoot(candidate: string): boolean {
-  return path.basename(path.resolve(candidate)) === ".planning";
+  return path.basename(path.resolve(candidate)).toLowerCase() === ".planning";
 }
 
 function latestUserText(ctx?: ToolCallContext): string {
@@ -149,6 +149,14 @@ function safeStat(candidate: string): fs.Stats | null {
   }
 }
 
+function safeRealpath(candidate: string): string | null {
+  try {
+    return fs.realpathSync(candidate);
+  } catch {
+    return null;
+  }
+}
+
 function isBulkyOrTransientPath(candidate: string): boolean {
   const ext = path.extname(candidate).toLowerCase();
   if (BULKY_OR_TRANSIENT_EXTENSIONS.has(ext)) return true;
@@ -163,7 +171,7 @@ function isSmallFileWhereReadEditIsUsuallyBetter(candidate: string): boolean {
 export function evaluateContextModeToolCall(
   event: ToolCallEvent,
   ctx?: ToolCallContext,
-  options: { stat?: (candidate: string) => fs.Stats | null } = {},
+  options: { stat?: (candidate: string) => fs.Stats | null; realpath?: (candidate: string) => string | null } = {},
 ): GuardDecision {
   const toolName = event.toolName ?? "";
   if (!CONTEXT_MODE_TOOLS.has(toolName)) return { action: "allow" };
@@ -171,14 +179,18 @@ export function evaluateContextModeToolCall(
 
   const cwd = path.resolve(ctx?.cwd ?? process.cwd());
   const stat = options.stat ?? safeStat;
+  const realpath = options.realpath ?? safeRealpath;
 
   if (toolName === "ctx_index") {
     const rawPath = asString(event.input?.path);
     if (!rawPath) return { action: "allow" };
 
     const candidate = normalizeCandidate(rawPath, cwd);
+    const canonical = realpath(candidate) ?? candidate;
+    const planningPath = isPlanningPath(candidate) || isPlanningPath(canonical);
+    const planningRoot = isPlanningRoot(candidate) || isPlanningRoot(canonical);
     const info = stat(candidate);
-    if (isPlanningPath(candidate) && isPlanningRoot(candidate) && (!info || info.isDirectory())) {
+    if (planningPath && planningRoot && (!info || info.isDirectory())) {
       if (userExplicitlyRequestedPlanningIndex(ctx)) {
         return {
           action: "warn",
@@ -193,7 +205,7 @@ export function evaluateContextModeToolCall(
       };
     }
 
-    if (isPlanningPath(candidate)) {
+    if (planningPath) {
       return {
         action: "warn",
         reason:
@@ -207,9 +219,10 @@ export function evaluateContextModeToolCall(
     if (!rawPath) return { action: "allow" };
 
     const candidate = normalizeCandidate(rawPath, cwd);
+    const canonical = realpath(candidate) ?? candidate;
     if (isBulkyOrTransientPath(candidate)) return { action: "allow" };
     if (userExplicitlyRequestedComputedFileProcessing(ctx)) return { action: "allow" };
-    if (!isSmallFileWhereReadEditIsUsuallyBetter(candidate)) return { action: "allow" };
+    if (!isSmallFileWhereReadEditIsUsuallyBetter(candidate) && !isPlanningPath(canonical)) return { action: "allow" };
 
     const info = stat(candidate);
     if (info?.isFile() && info.size > 0 && info.size <= SMALL_FILE_WARNING_BYTES) {

@@ -76,6 +76,43 @@ test("model routing supports fallback omit for unavailable configured models", (
   );
 });
 
+test("model routing treats ambiguous model names as unavailable", () => {
+  withRoutingConfig(
+    {
+      fallback: "error",
+      agents: { "gsd-planner": { model: "shared-name" } },
+    },
+    (cwd) => {
+      const resolved = resolveModelRouting(
+        { agent: "gsd-planner" },
+        {
+          cwd,
+          modelRegistry: {
+            getAvailable: () => [
+              { provider: "a", id: "one", name: "shared-name" },
+              { provider: "b", id: "two", name: "shared-name" },
+            ],
+          },
+        },
+      );
+
+      assert.equal(resolved.model, null);
+      assert.equal(resolved.recommendedAction.mode, "error");
+      assert.match(resolved.error ?? "", /shared-name/);
+    },
+  );
+});
+
+test("model routing infers unknown gsd-hyphen targets as skills and bare targets as commands", () => {
+  const cwd = mkdtempSync(path.join(tmpdir(), "pi-gsd-model-routing-"));
+  try {
+    assert.equal(resolveModelRouting({ target: "gsd-custom-flow" }, { cwd }).targetType, "skill");
+    assert.equal(resolveModelRouting({ target: "custom-flow" }, { cwd }).targetType, "command");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("model routing lets session override take precedence over configured routes", () => {
   withRoutingConfig(
     {

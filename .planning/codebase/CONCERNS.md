@@ -110,10 +110,10 @@
 - Test coverage: Good unit coverage exists for detection modes and path priority. Live Pi detection still requires manual `/gsd-status` after `/reload` as documented in `docs/DESIGN.md`.
 
 **Model switching combines routing policy with Pi side effects:**
-- Files: `src/extension/model-routing.ts`, `src/extension/register.ts`, `tests/register.test.ts`
-- Why fragile: `gsdModelCommandHandler()` resolves policy, optionally prompts via UI, calls `pi.setModel()`, stores session overrides, and sets thinking level. A partial failure can leave model and thinking state changed differently from the text message a user expects.
-- Safe modification: Keep `resolveModelRouting()` pure in `src/extension/model-routing.ts`. Keep Pi side effects isolated in `src/extension/register.ts`, and test prompt, unavailable model, inherited route, and thinking-level branches in `tests/register.test.ts`.
-- Test coverage: Existing tests cover inherit fallback and prompt fallback. Add tests for `fallback: "error"`, `fallback: "omit"`, failed `pi.setModel()`, unavailable `ctx.ui.select`, and session override precedence.
+- Files: `src/extension/model-routing.ts`, `src/extension/register.ts`, `tests/register.test.ts`, `tests/model-routing.test.ts`
+- Why fragile: `gsdModelCommandHandler()` resolves policy, optionally prompts via UI, calls `pi.setModel()`, stores session overrides, and sets thinking level.
+- Current mitigation: Failed `pi.setModel()` no longer applies the routed thinking level, preventing partial model/thinking state changes from looking successful. Tests cover prompt fallback, unavailable UI, failed model switch, inherited route, `fallback: "error"`, `fallback: "omit"`, ambiguous model names, target inference, and session override precedence.
+- Safe modification: Keep `resolveModelRouting()` pure in `src/extension/model-routing.ts`. Keep Pi side effects isolated in `src/extension/register.ts`, and test every new side-effect branch in `tests/register.test.ts`.
 
 **Context-mode guard depends on session-manager message shape:**
 - Files: `src/extension/context-mode-guard.ts`, `tests/context-mode-guard.test.ts`
@@ -182,11 +182,12 @@
 - Priority: Medium
 
 **Model routing edge cases:**
-- What's now tested: Invalid `.pi-gsd/model-routing.json`, `fallback: "error"`, `fallback: "omit"`, and session override precedence are covered in `tests/model-routing.test.ts`.
-- What's still not tested: failed `pi.setModel()`, unavailable `ctx.ui.select`, ambiguous model names, and command-vs-skill inference for unknown targets.
+- Status: Mostly resolved on 2026-06-08.
+- What's now tested: Invalid `.pi-gsd/model-routing.json`, `fallback: "error"`, `fallback: "omit"`, failed `pi.setModel()`, unavailable `ctx.ui.select`, ambiguous model names, command-vs-skill inference for unknown targets, and session override precedence are covered in `tests/model-routing.test.ts` and `tests/register.test.ts`.
+- What's still not tested: live Pi model registry/provider authentication failures beyond mocked `setModel()` failure.
 - Files: `src/extension/model-routing.ts`, `src/extension/register.ts`, `tests/register.test.ts`, `tests/model-routing.test.ts`
 - Risk: GSD model guidance can silently inherit an unintended model or set only part of the intended runtime state.
-- Priority: Medium
+- Priority: Low
 
 **Command discovery edge cases:**
 - What's now tested: Multiple upstream-style command files, missing command directory, malformed/missing frontmatter, quoted argument placeholder expansion, and package-local GSD Core path rewriting are covered in `tests/gsd-core-commands.test.ts`.
@@ -196,17 +197,18 @@
 - Priority: Low
 
 **Child process and cancellation behavior under load:**
-- What's now tested: Large stdout/stderr from the Node spawn fallback is covered by a regression test that verifies streaming tail truncation before final output truncation.
-- What's still not tested: process cancellation after spawn starts, Windows `.cmd` shell invocation, stderr-only failures with very large output, and non-UTF8 output.
+- What's now tested: Large stdout/stderr from the Node spawn fallback is covered by a regression test that verifies streaming tail truncation before final output truncation. Cancellation after spawn starts is also covered.
+- What's still not tested: Windows `.cmd` shell invocation, stderr-only failures with very large output, and non-UTF8 output.
 - Files: `src/extension/dispatcher.ts`, `tests/dispatcher.test.ts`, `tests/smoke.test.ts`
 - Risk: Long or failed GSD commands can degrade Pi responsiveness or hide actionable diagnostics.
-- Priority: Medium
+- Priority: Low
 
 **Context-mode heuristic breadth:**
-- What's not tested: Symlinked `.planning` paths, Windows drive/case variants, additional context-mode tool names, multi-turn user intent where the latest user message is not the relevant instruction, and large source files that exceed the small-file warning threshold.
+- What's now tested: Symlink-resolved `.planning` paths and `.planning` path casing variants are covered in `tests/context-mode-guard.test.ts`.
+- What's still not tested: additional future context-mode tool names, multi-turn user intent where the latest user message is not the relevant instruction, and large source files that exceed the small-file warning threshold.
 - Files: `src/extension/context-mode-guard.ts`, `tests/context-mode-guard.test.ts`
 - Risk: The guard may warn/block legitimate workflows or miss accidental indexing as Pi context-mode tools evolve.
-- Priority: Medium
+- Priority: Low
 
 ---
 
