@@ -1,0 +1,20 @@
+{
+  "id": "pi-gsd",
+  "name": "pi-gsd",
+  "version": "0.1.0",
+  "description": "Thin Pi adapter for upstream GSD Core with optional context-mode and pi-subagents awareness.",
+  "tier": "community",
+  "requires": {
+    "platform": ">=2.29.0"
+  },
+  "provides": {
+    "tools": [
+      "gsd"
+    ],
+    "commands": [
+      "gsd-status",
+      "gsd-doctor",
+      "gsd-run"
+    ]
+  }
+}

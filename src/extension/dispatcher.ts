@@ -1,0 +1,209 @@
+import * as fs from "node:fs";
+import * as path from "node:path";
+
+import { type Capabilities, defaultPackageRoot, detectCapabilities, type ExistsProbe } from "./capabilities.ts";
+
+export type PiExecResult = {
+  stdout?: string;
+  stderr?: string;
+  exitCode?: number;
+};
+
+export type PiExec = (
+  command: string,
+  args?: string[],
+  options?: { cwd?: string; signal?: AbortSignal },
+) => Promise<PiExecResult | string>;
+
+export type GsdAction = "status" | "doctor" | "run";
+
+export type GsdParams = {
+  action?: GsdAction;
+  args?: string[];
+  cwd?: string;
+};
+
+export type GsdExecutionContext = {
+  cwd?: string;
+  hasUI?: boolean;
+  ui?: {
+    notify?: (message: string, level?: "info" | "warning" | "error") => void;
+  };
+};
+
+export type GsdDispatchResult = {
+  text: string;
+  details: {
+    caps: Capabilities;
+  };
+};
+
+export type TextTruncator = (text: string) => string;
+
+export type GsdDispatcher = {
+  status(cwd: string): Promise<GsdDispatchResult>;
+  doctor(cwd: string): Promise<GsdDispatchResult>;
+  run(args: string[], cwd: string, signal?: AbortSignal): Promise<GsdDispatchResult>;
+};
+
+export type GsdDispatcherOptions = {
+  exec?: PiExec;
+  exists?: ExistsProbe;
+  packageRoot?: string;
+  gsdToolsCommand?: string;
+  truncateOutput?: TextTruncator;
+  detect?: (cwd: string) => Capabilities;
+};
+
+export const DEFAULT_MAX_OUTPUT_CHARS = 50_000;
+export const DEFAULT_MAX_OUTPUT_LINES = 2_000;
+
+export function resolveCwd(
+  params: GsdParams,
+  ctx?: GsdExecutionContext,
+  defaultCwd = process.cwd(),
+): string {
+  return path.resolve(params.cwd || ctx?.cwd || defaultCwd);
+}
+
+export function truncateTailText(
+  text: string,
+  maxChars = DEFAULT_MAX_OUTPUT_CHARS,
+  maxLines = DEFAULT_MAX_OUTPUT_LINES,
+): string {
+  const originalChars = text.length;
+  const lines = text.split(/\r?\n/);
+  const originalLines = lines.length;
+  let output = originalLines > maxLines ? lines.slice(-maxLines).join("\n") : text;
+
+  if (output.length > maxChars) {
+    output = output.slice(output.length - maxChars);
+  }
+
+  if (output.length === originalChars && output.split(/\r?\n/).length === originalLines) {
+    return output;
+  }
+
+  return [
+    `[output truncated: showing last ${output.length}/${originalChars} chars, up to ${Math.min(
+      originalLines,
+      maxLines,
+    )}/${originalLines} lines]`,
+    output,
+  ].join("\n");
+}
+
+export function formatCapabilities(cwd: string, caps: Capabilities, exists: ExistsProbe = fs.existsSync): string {
+  const planningDir = path.join(cwd, ".planning");
+  return [
+    "# pi-gsd status",
+    "",
+    `- CWD: \`${cwd}\``,
+    `- .planning present: ${exists(planningDir) ? "yes" : "no"}`,
+    `- mode: \`${caps.mode}\``,
+    `- package-local @opengsd/gsd-core / gsd-tools: ${caps.gsdCore ? "detected" : "not detected"}`,
+    `- gsd-tools path: ${caps.paths.gsdTools ?? "not detected"}`,
+    `- pi-subagents: ${caps.subagents ? "detected" : "not detected"}`,
+    `- context-mode: ${caps.contextMode ? "detected" : "not detected"}`,
+  ].join("\n");
+}
+
+function formatDoctor(cwd: string, caps: Capabilities, exists: ExistsProbe): string {
+  return [
+    formatCapabilities(cwd, caps, exists),
+    "",
+    "## Integration guidance",
+    "",
+    "- Use upstream `gsd-core` behavior through `gsd-tools`; do not fork or duplicate GSD Core semantics.",
+    "- Resolve `gsd-tools` from this Pi package's installed `@opengsd/gsd-core` dependency; do not use system-wide GSD installs for Pi execution.",
+    "- If `gsd-core` needs a better machine-readable dispatcher for Pi, contribute that seam upstream and swap only the pi-gsd dispatcher adapter.",
+    "- Use `subagent({ action: \"list\" })` before selecting pi-subagents agents or chains.",
+    "- Use `subagent` for large GSD planning, execution, review, or parallel verification when pi-subagents is detected.",
+    "- Do not make the `gsd` tool call `subagent` internally in v1.",
+    "- Use `ctx_execute`, `ctx_execute_file`, `ctx_search`, or indexing only for bulky or transient context when context-mode is detected.",
+    "- In combined mode, let the parent GSD flow use `subagent`; child agents may use `ctx_*` tools when context-mode is loaded.",
+    "- Do not run nested subagents unless the selected subagent is explicitly intended to orchestrate.",
+    "- Treat `.planning/` as the project-local GSD record-keeping directory.",
+    "- Do not put Pi-wrapper-specific material in `.planning/`; only write GSD-compatible records there.",
+    "- Do not create a Pi-wrapper project-state directory by default.",
+    "- Reserve `.pi-gsd/` only for future documented project-local adapter metadata that cannot be represented as a GSD-compatible `.planning/` record.",
+    "- context-mode caches should support investigations, not replace durable artifacts.",
+    "- Do not create or assume `.gsd/`; avoid colliding with other GSD-family tools.",
+  ].join("\n");
+}
+
+function formatExecResult(result: PiExecResult | string): string {
+  if (typeof result === "string") return result;
+
+  const stdout = result.stdout ?? "";
+  const stderr = result.stderr ?? "";
+  const exitCode = result.exitCode ?? 0;
+  const output = [stdout, stderr ? `\n[stderr]\n${stderr}` : ""].join("").trim();
+  return [`gsd-tools exited with ${exitCode}`, output ? `\n${output}` : ""].join("\n");
+}
+
+export function createGsdDispatcher(options: GsdDispatcherOptions = {}): GsdDispatcher {
+  const exists = options.exists ?? fs.existsSync;
+  const packageRoot = options.packageRoot ?? defaultPackageRoot(exists);
+  const truncateOutput = options.truncateOutput ?? truncateTailText;
+  const detect = options.detect ?? ((cwd: string) => detectCapabilities({ cwd, packageRoot, exists }));
+
+  function details(cwd: string): { caps: Capabilities } {
+    return { caps: detect(cwd) };
+  }
+
+  return {
+    async status(cwd) {
+      const resultDetails = details(cwd);
+      return {
+        text: formatCapabilities(cwd, resultDetails.caps, exists),
+        details: resultDetails,
+      };
+    },
+
+    async doctor(cwd) {
+      const resultDetails = details(cwd);
+      return {
+        text: formatDoctor(cwd, resultDetails.caps, exists),
+        details: resultDetails,
+      };
+    },
+
+    async run(args, cwd, signal) {
+      const resultDetails = details(cwd);
+      if (signal?.aborted) {
+        return {
+          text: "Cancelled before starting.",
+          details: resultDetails,
+        };
+      }
+
+      if (!options.exec) {
+        return {
+          text: [
+            "pi-gsd cannot run GSD commands because this Pi runtime did not expose pi.exec().",
+            "Use `gsd-tools` directly from the shell, or add a stable upstream SDK dispatcher and call it from this wrapper.",
+          ].join("\n"),
+          details: resultDetails,
+        };
+      }
+
+      const command = options.gsdToolsCommand ?? resultDetails.caps.paths.gsdTools;
+      if (!command) {
+        return {
+          text: [
+            "pi-gsd cannot run GSD commands because its package-local `gsd-tools` binary was not detected.",
+            "Install or repair the `@opengsd/gsd-core` dependency for this pi-gsd package; do not rely on a system-wide GSD install.",
+          ].join("\n"),
+          details: resultDetails,
+        };
+      }
+
+      const result = await options.exec(command, args, { cwd, signal });
+      return {
+        text: truncateOutput(formatExecResult(result)),
+        details: resultDetails,
+      };
+    },
+  };
+}
