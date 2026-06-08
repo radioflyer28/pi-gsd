@@ -264,13 +264,36 @@ test("capability detection prefers the pi-gsd package-local gsd-core dependency"
   assert.equal(caps.paths.gsdTools, packageTool);
 });
 
-test("capability detection finds Pi npm-installed optional packages", () => {
+test("capability detection finds user Pi npm-installed optional packages", () => {
+  const cwd = path.resolve("repo");
   const homeDir = path.resolve("home");
   const subagentsPath = path.join(homeDir, ".pi", "agent", "npm", "node_modules", "pi-subagents");
   const contextModePath = path.join(homeDir, ".pi", "agent", "npm", "node_modules", "context-mode");
 
   const caps = detectCapabilities({
-    cwd: "repo",
+    cwd,
+    homeDir,
+    packageRoot: path.resolve("pkg"),
+    exists: (candidate) => candidate === subagentsPath || candidate === contextModePath,
+    candidatePaths: {
+      gsdCore: [],
+      gsdTools: [],
+    },
+  });
+
+  assert.equal(caps.mode, "delegated-ctx");
+  assert.equal(caps.paths.subagents, subagentsPath);
+  assert.equal(caps.paths.contextMode, contextModePath);
+});
+
+test("capability detection finds project-local Pi optional packages", () => {
+  const cwd = path.resolve("repo");
+  const homeDir = path.resolve("home");
+  const subagentsPath = path.join(cwd, ".pi", "npm", "node_modules", "pi-subagents");
+  const contextModePath = path.join(cwd, ".pi", "npm", "node_modules", "context-mode");
+
+  const caps = detectCapabilities({
+    cwd,
     homeDir,
     packageRoot: path.resolve("pkg"),
     exists: (candidate) => candidate === subagentsPath || candidate === contextModePath,

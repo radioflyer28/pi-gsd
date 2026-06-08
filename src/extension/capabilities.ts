@@ -61,19 +61,27 @@ function packageLocalGsdToolsCandidates(packageRoot: string): string[] {
   return gsdTools.map((command) => path.join(packageRoot, "node_modules", ".bin", command));
 }
 
-function defaultCandidatePaths(homeDir: string, packageRoot: string): Record<CapabilityName, string[]> {
+function defaultCandidatePaths(
+  homeDir: string,
+  packageRoot: string,
+  cwd: string,
+): Record<CapabilityName, string[]> {
   const packageLocalGsdTools = packageLocalGsdToolsCandidates(packageRoot);
   return {
     gsdCore: packageLocalGsdCoreCandidates(packageRoot),
     gsdTools: packageLocalGsdTools,
     subagents: [
+      path.join(cwd, ".pi", "npm", "node_modules", "pi-subagents"),
+      path.join(cwd, ".pi", "extensions", "subagent"),
+      path.join(cwd, ".pi", "extensions", "pi-subagents"),
       path.join(homeDir, ".pi", "agent", "npm", "node_modules", "pi-subagents"),
       path.join(homeDir, ".pi", "agent", "extensions", "subagent"),
       path.join(homeDir, ".pi", "agent", "extensions", "pi-subagents"),
     ],
     contextMode: [
+      path.join(cwd, ".pi", "npm", "node_modules", "context-mode"),
+      path.join(cwd, ".pi", "extensions", "context-mode"),
       path.join(homeDir, ".pi", "agent", "npm", "node_modules", "context-mode"),
-      path.join(homeDir, ".pi", "extensions", "context-mode"),
       path.join(homeDir, ".pi", "agent", "extensions", "context-mode"),
     ],
   };
@@ -87,10 +95,11 @@ function firstExisting(candidates: string[], exists: ExistsProbe): string | null
 }
 
 export function detectCapabilities(options: CapabilityDetectionOptions = {}): Capabilities {
+  const cwd = path.resolve(options.cwd ?? process.cwd());
   const homeDir = options.homeDir ?? os.homedir();
   const exists = options.exists ?? fs.existsSync;
   const packageRoot = path.resolve(options.packageRoot ?? defaultPackageRoot(exists));
-  const defaults = defaultCandidatePaths(homeDir, packageRoot);
+  const defaults = defaultCandidatePaths(homeDir, packageRoot, cwd);
   const candidates = {
     gsdCore: options.candidatePaths?.gsdCore ?? defaults.gsdCore,
     gsdTools: options.candidatePaths?.gsdTools ?? defaults.gsdTools,
