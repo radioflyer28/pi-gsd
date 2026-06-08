@@ -8,7 +8,7 @@ import registerPiGsdExtension from "../src/extension/index.ts";
 import { parseCommandArgs, registerPiGsdCore } from "../src/extension/register.ts";
 import { capabilities, mockPi, toolText } from "./test-utils.ts";
 
-test("registerPiGsdCore registers one namespaced tool and four namespaced commands", () => {
+test("registerPiGsdCore registers one namespaced tool and five namespaced commands", () => {
   const pi = mockPi();
 
   registerPiGsdCore(pi.api, { parameters: {}, detect: () => capabilities("inline"), gsdCoreCommands: [] });
@@ -16,7 +16,7 @@ test("registerPiGsdCore registers one namespaced tool and four namespaced comman
   assert.equal(pi.tools.length, 1);
   assert.equal(pi.tools[0].name, "gsd");
   assert.equal(pi.tools[0].label, "GSD");
-  assert.deepEqual([...pi.commands.keys()].sort(), ["gsd-doctor", "gsd-model", "gsd-run", "gsd-status"]);
+  assert.deepEqual([...pi.commands.keys()].sort(), ["gsd-doctor", "gsd-init-config", "gsd-model", "gsd-run", "gsd-status"]);
 });
 
 test("registerPiGsdCore exposes upstream GSD Core commands as slash commands", async () => {
@@ -165,8 +165,9 @@ test("default extension registers the public tool with context-mode and subagent
 });
 
 test("registered tool resolves Pi-native model routing with inherit fallback", async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-gsd-routing-default-"));
   const pi = mockPi();
-  registerPiGsdCore(pi.api, { parameters: {}, detect: () => capabilities("inline"), defaultCwd: process.cwd(), gsdCoreCommands: [] });
+  registerPiGsdCore(pi.api, { parameters: {}, detect: () => capabilities("inline"), defaultCwd: cwd, gsdCoreCommands: [] });
 
   const result = await pi.tools[0].execute(
     "call-1",
@@ -174,7 +175,7 @@ test("registered tool resolves Pi-native model routing with inherit fallback", a
     undefined,
     undefined,
     {
-      cwd: process.cwd(),
+      cwd,
       model: { provider: "openai", id: "gpt-5.3-codex" },
       modelRegistry: { getAvailable: () => [{ provider: "openai", id: "gpt-5.3-codex" }] },
     },
@@ -188,16 +189,15 @@ test("registered tool resolves Pi-native model routing with inherit fallback", a
 });
 
 test("gsd-model command applies inherited route thinking without forcing a model", async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-gsd-routing-default-"));
   const pi = mockPi();
-  registerPiGsdCore(pi.api, { parameters: {}, detect: () => capabilities("inline"), defaultCwd: process.cwd(), gsdCoreCommands: [] });
-  const model = { provider: "openai", id: "gpt-5.5" };
+  registerPiGsdCore(pi.api, { parameters: {}, detect: () => capabilities("inline"), defaultCwd: cwd, gsdCoreCommands: [] });
 
   const response = await pi.commands.get("gsd-model")!.handler("agent gsd-planner", {
-    cwd: process.cwd(),
+    cwd,
     model: { provider: "openai", id: "gpt-5.3-codex" },
     modelRegistry: {
-      getAvailable: () => [model],
-      find: (provider: string, id: string) => (provider === "openai" && id === "gpt-5.5" ? model : undefined),
+      getAvailable: () => [],
     },
   });
 

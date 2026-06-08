@@ -4,8 +4,11 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import { type Capabilities, defaultPackageRoot, detectCapabilities, type ExistsProbe } from "./capabilities.ts";
+import { DEFAULT_PI_GSD_CONFIG, getPiGsdConfigPath } from "./config.ts";
 import {
+  DEFAULT_MODEL_ROUTING_CONFIG,
   formatResolvedModelRouting,
+  getModelRoutingConfigPath,
   modelRef,
   resolveModelRouting,
   type ModelRoutingContext,
@@ -26,12 +29,13 @@ export type PiExec = (
   options?: { cwd?: string; signal?: AbortSignal },
 ) => Promise<PiExecResult | string>;
 
-export type GsdAction = "status" | "doctor" | "run" | "resolve-model";
+export type GsdAction = "status" | "doctor" | "run" | "resolve-model" | "init-config";
 
 export type GsdParams = ResolveModelRoutingRequest & {
   action?: GsdAction;
   args?: string[];
   cwd?: string;
+  force?: boolean;
 };
 
 export type GsdExecutionContext = {
@@ -59,6 +63,7 @@ export type GsdDispatcher = {
   doctor(cwd: string, modelContext?: ModelRoutingContext): Promise<GsdDispatchResult>;
   run(args: string[], cwd: string, signal?: AbortSignal): Promise<GsdDispatchResult>;
   resolveModel(request: ResolveModelRoutingRequest, cwd: string, modelContext?: ModelRoutingContext): Promise<GsdDispatchResult>;
+  initConfig(cwd: string, force?: boolean): Promise<GsdDispatchResult>;
 };
 
 export type GsdDispatcherOptions = {
@@ -127,6 +132,18 @@ export function findExternalGsdSkillPaths(homeDir = os.homedir()): string[] {
     .sort();
 }
 
+function formatIntegrationStatus(
+  name: "subagents" | "contextMode",
+  caps: Capabilities,
+): string {
+  if (caps.integrationSettings[name] === "off") {
+    return caps.detected[name]
+      ? `detected, disabled by ${caps.configPath}`
+      : `disabled by ${caps.configPath}`;
+  }
+  return caps[name] ? "detected" : "not detected";
+}
+
 export function formatCapabilities(
   cwd: string,
   caps: Capabilities,
@@ -143,10 +160,11 @@ export function formatCapabilities(
     `- mode: \`${caps.mode}\``,
     `- package-local @opengsd/gsd-core / gsd-tools: ${caps.gsdCore ? "detected" : "not detected"}`,
     `- gsd-tools path: ${caps.paths.gsdTools ?? "not detected"}`,
-    `- pi-subagents: ${caps.subagents ? "detected" : "not detected"}`,
-    `- context-mode: ${caps.contextMode ? "detected" : "not detected"}`,
+    `- pi-subagents: ${formatIntegrationStatus("subagents", caps)}`,
+    `- context-mode: ${formatIntegrationStatus("contextMode", caps)}`,
     `- current Pi model: ${currentModel ?? "unknown"}`,
     `- current Pi thinking: ${modelContext?.thinkingLevel ?? "unknown"}`,
+    ...caps.configWarnings.map((warning) => `- config warning: ${warning}`),
   ].join("\n");
 }
 
@@ -175,6 +193,26 @@ function formatDoctor(
   externalSkillPaths: string[],
   modelContext?: ModelRoutingContext,
 ): string {
+  const integrationGuidance = [
+    ...(caps.subagents
+      ? [
+          "- Use `subagent({ action: \"list\" })` before selecting pi-subagents agents or chains.",
+          "- Use the shared pi-gsd model-routing result as the model input for `subagent` when pi-subagents is detected and an explicit model is available.",
+          "- Do not make the `gsd` tool call `subagent` internally in v1.",
+          "- Do not run nested subagents unless the selected subagent is explicitly intended to orchestrate.",
+        ]
+      : []),
+    ...(caps.contextMode
+      ? [
+          "- Use `ctx_execute`, `ctx_execute_file`, `ctx_search`, or indexing only for bulky or transient context when context-mode is detected.",
+          "- context-mode caches should support investigations, not replace durable artifacts.",
+        ]
+      : []),
+    ...(caps.subagents && caps.contextMode
+      ? ["- In combined mode, let the parent GSD flow use `subagent`; child agents may use `ctx_*` tools when context-mode is loaded."]
+      : []),
+  ];
+
   return [
     formatCapabilities(cwd, caps, exists, modelContext),
     ...formatExternalGsdSkillWarning(externalSkillPaths),
@@ -186,17 +224,11 @@ function formatDoctor(
     "- If `gsd-core` needs a better machine-readable dispatcher for Pi, contribute that seam upstream and swap only the pi-gsd dispatcher adapter.",
     "- Use `gsd({ action: \"resolve-model\", agent: \"gsd-planner\" })` before choosing a model for GSD-specific work.",
     "- Keep GSD Core `resolve_model_ids` omitted/inherited under Pi unless you intentionally configured a non-Pi GSD runtime.",
-    "- Use `subagent({ action: \"list\" })` before selecting pi-subagents agents or chains.",
-    "- Use the shared pi-gsd model-routing result as the model input for `subagent` when pi-subagents is detected and an explicit model is available.",
-    "- Do not make the `gsd` tool call `subagent` internally in v1.",
-    "- Use `ctx_execute`, `ctx_execute_file`, `ctx_search`, or indexing only for bulky or transient context when context-mode is detected.",
-    "- In combined mode, let the parent GSD flow use `subagent`; child agents may use `ctx_*` tools when context-mode is loaded.",
-    "- Do not run nested subagents unless the selected subagent is explicitly intended to orchestrate.",
+    ...integrationGuidance,
     "- Treat `.planning/` as the project-local GSD record-keeping directory.",
     "- Do not put Pi-wrapper-specific material in `.planning/`; only write GSD-compatible records there.",
     "- Do not create a Pi-wrapper project-state directory by default.",
     "- Reserve `.pi-gsd/` only for future documented project-local adapter metadata that cannot be represented as a GSD-compatible `.planning/` record.",
-    "- context-mode caches should support investigations, not replace durable artifacts.",
     "- Do not create or assume `.gsd/`; avoid colliding with other GSD-family tools.",
   ].join("\n");
 }
@@ -209,6 +241,36 @@ function formatExecResult(result: PiExecResult | string): string {
   const exitCode = result.exitCode ?? 0;
   const output = [stdout, stderr ? `\n[stderr]\n${stderr}` : ""].join("").trim();
   return [`gsd-tools exited with ${exitCode}`, output ? `\n${output}` : ""].join("\n");
+}
+
+function stableJson(value: unknown): string {
+  return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+function writeDefaultFile(filePath: string, content: string, force: boolean): "created" | "unchanged" | "overwritten" {
+  if (fs.existsSync(filePath) && !force) return "unchanged";
+  const existed = fs.existsSync(filePath);
+  fs.writeFileSync(filePath, content, "utf8");
+  return existed ? "overwritten" : "created";
+}
+
+function initPiGsdConfigFiles(cwd: string, force = false): string {
+  const dir = path.join(cwd, ".pi-gsd");
+  fs.mkdirSync(dir, { recursive: true });
+
+  const configPath = getPiGsdConfigPath(cwd);
+  const routingPath = getModelRoutingConfigPath(cwd);
+  const configStatus = writeDefaultFile(configPath, stableJson(DEFAULT_PI_GSD_CONFIG), force);
+  const routingStatus = writeDefaultFile(routingPath, stableJson(DEFAULT_MODEL_ROUTING_CONFIG), force);
+
+  return [
+    "# pi-gsd config initialized",
+    "",
+    `- directory: \`${dir}\``,
+    `- ${configStatus}: \`${configPath}\``,
+    `- ${routingStatus}: \`${routingPath}\``,
+    force ? "- force: existing files were overwritten" : "- existing files were left unchanged; pass `force: true` to overwrite defaults",
+  ].join("\n");
 }
 
 class StreamingTextTail {
@@ -337,6 +399,14 @@ export function createGsdDispatcher(options: GsdDispatcherOptions = {}): GsdDisp
       return {
         text: formatResolvedModelRouting(resolved),
         details: resultDetails,
+      };
+    },
+
+    async initConfig(cwd, force) {
+      const text = initPiGsdConfigFiles(cwd, force);
+      return {
+        text,
+        details: details(cwd),
       };
     },
 

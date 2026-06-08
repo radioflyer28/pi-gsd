@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import * as path from "node:path";
 import test from "node:test";
 
@@ -140,6 +142,27 @@ test("context-mode guard allows logs, reports, and other bulky/transient paths",
 test("context-mode guard allows searches and execute commands without friction", () => {
   assert.equal(evaluateContextModeToolCall({ toolName: "ctx_search", input: { queries: ["foo"] } }).action, "allow");
   assert.equal(evaluateContextModeToolCall({ toolName: "ctx_execute", input: { language: "shell" } }).action, "allow");
+});
+
+test("context-mode guard is inert when contextMode is off in .pi-gsd/config.json", () => {
+  const cwd = mkdtempSync(path.join(tmpdir(), "pi-gsd-guard-disabled-"));
+  mkdirSync(path.join(cwd, ".pi-gsd"));
+  writeFileSync(
+    path.join(cwd, ".pi-gsd", "config.json"),
+    JSON.stringify({ integrations: { contextMode: "off" } }),
+  );
+
+  try {
+    const decision = evaluateContextModeToolCall(
+      { toolName: "ctx_index", input: { path: ".planning" } },
+      { cwd },
+      { stat: () => dirStats() },
+    );
+
+    assert.equal(decision.action, "allow");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });
 
 test("registered context-mode guard blocks through Pi tool_call hook and notifies UI", async () => {

@@ -13,7 +13,7 @@ import { registerPiGsdCore } from "./register.ts";
 
 const TOOL_PARAMS = Type.Object(
   {
-    action: StringEnum(["status", "doctor", "run", "resolve-model"] as const),
+    action: StringEnum(["status", "doctor", "run", "resolve-model", "init-config"] as const),
     args: Type.Optional(
       Type.Array(Type.String(), {
         description: "Arguments passed to gsd-tools for action=run.",
@@ -42,6 +42,11 @@ const TOOL_PARAMS = Type.Object(
     command: Type.Optional(
       Type.String({
         description: "GSD command id to resolve.",
+      }),
+    ),
+    force: Type.Optional(
+      Type.Boolean({
+        description: "For action=init-config, overwrite existing .pi-gsd default files when true. Defaults to false.",
       }),
     ),
   },

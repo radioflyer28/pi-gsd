@@ -1,6 +1,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+import { loadPiGsdConfig } from "./config.ts";
+
 type ToolCallEvent = {
   toolName?: string;
   input?: Record<string, unknown>;
@@ -178,6 +180,7 @@ export function evaluateContextModeToolCall(
   if (ALWAYS_ALLOW_TOOLS.has(toolName)) return { action: "allow" };
 
   const cwd = path.resolve(ctx?.cwd ?? process.cwd());
+  if (loadPiGsdConfig(cwd).config.integrations.contextMode === "off") return { action: "allow" };
   const stat = options.stat ?? safeStat;
   const realpath = options.realpath ?? safeRealpath;
 

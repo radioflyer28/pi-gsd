@@ -18,6 +18,7 @@ It does **not** reimplement GSD. It registers a small Pi tool, slash commands, a
   - `doctor` — show diagnostics and integration guidance.
   - `run` — dispatch to package-local upstream `gsd-tools`.
   - `resolve-model` — resolve Pi-native model/thinking guidance for GSD agents, skills, or commands.
+  - `init-config` — create `.pi-gsd/config.json` and `.pi-gsd/model-routing.json` with defaults.
 - **Slash commands**:
   - Dynamic upstream GSD Core commands as `/gsd-<command>`, sourced at runtime from `@opengsd/gsd-core` (for example `/gsd-plan-phase 1`).
   - pi-gsd integration commands:
@@ -25,6 +26,7 @@ It does **not** reimplement GSD. It registers a small Pi tool, slash commands, a
     - `/gsd-doctor`
     - `/gsd-run <args>`
     - `/gsd-model [agent|skill|command] <target>`
+    - `/gsd-init-config`
 - **Agent guidance embedded in extension tool metadata** so pi-gsd presents as an extension/package, not as a competing GSD skill.
 - **Optional integration awareness** for:
   - `context-mode` — context-efficient processing for bulky logs, broad scans, generated reports, and repeated search/filtering.
@@ -127,6 +129,21 @@ Quoted arguments are supported:
 
 ## Optional integration behavior
 
+Run `/gsd-init-config` or `gsd({ action: "init-config" })` to create `.pi-gsd/config.json` and `.pi-gsd/model-routing.json` with the defaults shown below. Existing files are left unchanged unless the tool call passes `force: true`.
+
+By default, `pi-gsd` auto-detects `context-mode` and `pi-subagents` when their tools are loaded or their Pi packages are installed. Project-local `.pi-gsd/config.json` can mask those integrations for GSD guidance and status without uninstalling them globally:
+
+```json
+{
+  "integrations": {
+    "subagents": "auto",
+    "contextMode": "auto"
+  }
+}
+```
+
+Set either value to `"off"` to make `pi-gsd` treat that integration as unavailable. For example, `"subagents": "off"` keeps GSD workflows single-agent even if the `subagent` tool exists; `"contextMode": "off"` also makes pi-gsd's context-mode guard inert for that project.
+
 ### context-mode
 
 When `context-mode` is loaded, `pi-gsd` guides agents to use `ctx_*` tools only when they materially reduce noisy context, such as:
@@ -161,7 +178,7 @@ Before delegating GSD-specific work, agents should call `gsd({ action: "resolve-
 
 Do not use context-mode as durable GSD memory. Context-mode caches and indexes are useful for the current investigation, but they are not the source of truth.
 
-Do not create or assume `.gsd/`; that name can collide with other GSD-family tools. Wrapper-private Pi adapter metadata belongs in `.pi-gsd/`; currently this is limited to optional `.pi-gsd/model-routing.json`.
+Do not create or assume `.gsd/`; that name can collide with other GSD-family tools. Wrapper-private Pi adapter metadata belongs in `.pi-gsd/`, including optional `.pi-gsd/config.json` integration settings and `.pi-gsd/model-routing.json` routes.
 
 ## Development
 

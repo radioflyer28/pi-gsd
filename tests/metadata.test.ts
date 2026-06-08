@@ -15,7 +15,7 @@ test("package metadata exposes the expected Pi package resources", () => {
 
   assert.equal(manifest.id, "pi-gsd");
   assert.deepEqual(manifest.provides.tools, ["gsd"]);
-  assert.deepEqual(manifest.provides.commands, ["gsd-status", "gsd-doctor", "gsd-run", "gsd-model", "gsd-*"]);
+  assert.deepEqual(manifest.provides.commands, ["gsd-status", "gsd-doctor", "gsd-run", "gsd-model", "gsd-init-config", "gsd-*"]);
 });
 
 test("package metadata keeps GSD Core bundled and Pi packages external", () => {

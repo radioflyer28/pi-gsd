@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import * as path from "node:path";
 import test from "node:test";
 
@@ -143,4 +145,34 @@ test("capability detection trusts active Pi tool inventory over filesystem probe
   assert.equal(caps.contextMode, true);
   assert.equal(caps.paths.subagents, "<active-tool:subagent>");
   assert.equal(caps.paths.contextMode, "<active-tool:ctx_execute>");
+});
+
+test("capability detection masks optional integrations disabled by .pi-gsd/config.json", () => {
+  const cwd = mkdtempSync(path.join(tmpdir(), "pi-gsd-config-"));
+  mkdirSync(path.join(cwd, ".pi-gsd"));
+  writeFileSync(
+    path.join(cwd, ".pi-gsd", "config.json"),
+    JSON.stringify({ integrations: { subagents: "off", contextMode: "off" } }),
+  );
+
+  try {
+    const caps = detectCapabilities({
+      cwd,
+      homeDir: path.resolve("home"),
+      packageRoot: path.resolve("pkg"),
+      exists: () => false,
+      activeToolNames: ["ctx_execute", "subagent"],
+      candidatePaths: { gsdCore: [], gsdTools: [] },
+    });
+
+    assert.equal(caps.mode, "inline");
+    assert.equal(caps.subagents, false);
+    assert.equal(caps.contextMode, false);
+    assert.equal(caps.detected.subagents, true);
+    assert.equal(caps.detected.contextMode, true);
+    assert.equal(caps.integrationSettings.subagents, "off");
+    assert.equal(caps.integrationSettings.contextMode, "off");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });

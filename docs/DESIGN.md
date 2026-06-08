@@ -22,7 +22,7 @@ If GSD Core needs a better programmatic dispatcher, that seam should be added up
 
 ## Pi-facing surface
 
-`pi-gsd` exposes one tool and three commands.
+`pi-gsd` exposes one tool and five fixed integration commands plus dynamic upstream GSD Core commands.
 
 Tool:
 
@@ -34,23 +34,27 @@ Commands:
 - `/gsd-doctor`
 - `/gsd-run <args>`
 - `/gsd-model [agent|skill|command] <target>`
+- `/gsd-init-config`
 
-The tool supports four actions:
+The tool supports five actions:
 
 - `status(cwd)`
 - `doctor(cwd)`
 - `run(args, cwd, signal)`
 - `resolve-model(agent|skill|command|target, cwd)`
+- `init-config(cwd, force?)`
 
 The command names are intentionally namespaced. Avoid adding broad names like `/status`, `/doctor`, or `/run`.
 
 ## Dispatcher boundary
 
-All GSD execution goes through a small dispatcher abstraction with three operations:
+All GSD execution goes through a small dispatcher abstraction with these operations:
 
 - `status`
 - `doctor`
 - `run`
+- `resolveModel`
+- `initConfig`
 
 The current dispatcher uses package-local `gsd-tools` as the execution seam. It prefers Pi's `pi.exec` when available and falls back to Node child-process spawning for the package-local binary when `pi.exec` is unavailable.
 
@@ -70,6 +74,19 @@ The wrapper reports four modes:
 Detection prefers active Pi tool inventory when available. Public tools such as `ctx_execute` and `subagent` are stronger signals than files on disk because they prove the other Pi package is actually loaded.
 
 Filesystem probes remain as a fallback for runtimes that do not expose active tool inventory.
+
+Project-local `.pi-gsd/config.json` can mask optional integrations after detection:
+
+```json
+{
+  "integrations": {
+    "subagents": "auto",
+    "contextMode": "auto"
+  }
+}
+```
+
+`"off"` means pi-gsd reports and guides as if that integration is unavailable, even when the tool is installed or active. The underlying Pi package remains available globally; this is a pi-gsd integration mask only.
 
 ## Optional integrations
 
@@ -130,7 +147,7 @@ Do not put Pi-wrapper-specific material in `.planning/`. Other GSD skills and ru
 
 Do not create `.gsd/` for `pi-gsd` state. That name can collide with other GSD-family tools.
 
-`pi-gsd` may use `.pi-gsd/` for wrapper-private project metadata. The first such file is `.pi-gsd/model-routing.json`, which maps GSD agents/skills/commands to Pi-native model IDs, thinking levels, and fallback policy. This file is intentionally not a GSD Core artifact and should not be stored in `.planning/`.
+`pi-gsd` may use `.pi-gsd/` for wrapper-private project metadata. `.pi-gsd/config.json` stores pi-gsd integration settings, and `.pi-gsd/model-routing.json` maps GSD agents/skills/commands to Pi-native model IDs, thinking levels, and fallback policy. These files are intentionally not GSD Core artifacts and should not be stored in `.planning/`.
 
 Model routing supports an opt-in `prompt` fallback. Prompt answers are remembered in memory per target for the current Pi extension session only; they are not written to `.planning/` or `.pi-gsd/` unless the user edits config explicitly.
 
@@ -140,6 +157,7 @@ Model routing supports an opt-in `prompt` fallback. Prompt answers are remembere
 - Use `pi.exec` when available and Node child-process spawning as a fallback.
 - Publish `@opengsd/gsd-core` as a regular dependency of `pi-gsd`.
 - Keep `context-mode` and `pi-subagents` as separately installed Pi packages.
+- Support project-local `auto`/`off` integration masks in `.pi-gsd/config.json` without disabling those Pi packages globally.
 - Do not ship packaged `gsd.planner`, `gsd.executor`, or `gsd.reviewer` agents in v1.
 - Keep context-mode usage selective and guardrail-driven rather than adding a broad aggressiveness configuration.
 - Keep GSD Core `resolve_model_ids` omitted/inherited under Pi by default; Pi-native model resolution belongs to `pi-gsd` because Pi can run arbitrary providers and custom model IDs.

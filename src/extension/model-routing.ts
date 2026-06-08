@@ -75,7 +75,7 @@ export type ResolvedModelRouting = {
   };
 };
 
-const DEFAULT_CONFIG: ModelRoutingConfig = {
+export const DEFAULT_MODEL_ROUTING_CONFIG: ModelRoutingConfig = {
   fallback: "inherit",
   default: { model: "inherit", thinking: "inherit" },
   tiers: {
@@ -229,12 +229,12 @@ export function loadModelRoutingConfig(cwd: string): { config: ModelRoutingConfi
   }
 
   const config: ModelRoutingConfig = {
-    fallback: userConfig.fallback ?? DEFAULT_CONFIG.fallback,
-    default: mergeRoute(DEFAULT_CONFIG.default, userConfig.default),
+    fallback: userConfig.fallback ?? DEFAULT_MODEL_ROUTING_CONFIG.fallback,
+    default: mergeRoute(DEFAULT_MODEL_ROUTING_CONFIG.default, userConfig.default),
     tiers: {
-      heavy: mergeRoute(DEFAULT_CONFIG.tiers?.heavy, userConfig.tiers?.heavy),
-      standard: mergeRoute(DEFAULT_CONFIG.tiers?.standard, userConfig.tiers?.standard),
-      light: mergeRoute(DEFAULT_CONFIG.tiers?.light, userConfig.tiers?.light),
+      heavy: mergeRoute(DEFAULT_MODEL_ROUTING_CONFIG.tiers?.heavy, userConfig.tiers?.heavy),
+      standard: mergeRoute(DEFAULT_MODEL_ROUTING_CONFIG.tiers?.standard, userConfig.tiers?.standard),
+      light: mergeRoute(DEFAULT_MODEL_ROUTING_CONFIG.tiers?.light, userConfig.tiers?.light),
     },
     agents: { ...(userConfig.agents ?? {}) },
     skills: { ...(userConfig.skills ?? {}) },

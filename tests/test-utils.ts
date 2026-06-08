@@ -1,6 +1,15 @@
+import * as path from "node:path";
+
 import type { Capabilities, GsdMode } from "../src/extension/capabilities.ts";
 
-export function capabilities(mode: GsdMode, overrides: Partial<Capabilities> = {}): Capabilities {
+type CapabilityOverrides = Omit<Partial<Capabilities>, "paths" | "detected" | "integrationSettings"> & {
+  paths?: Partial<Capabilities["paths"]>;
+  detected?: Partial<Capabilities["detected"]>;
+  integrationSettings?: Partial<Capabilities["integrationSettings"]>;
+};
+
+export function capabilities(mode: GsdMode, overrides: CapabilityOverrides = {}): Capabilities {
+  const { paths: pathOverrides, detected, integrationSettings, ...topLevelOverrides } = overrides;
   const subagents = mode === "delegated" || mode === "delegated-ctx";
   const contextMode = mode === "ctx-inline" || mode === "delegated-ctx";
   const paths = {
@@ -14,10 +23,20 @@ export function capabilities(mode: GsdMode, overrides: Partial<Capabilities> = {
     subagents,
     contextMode,
     mode,
-    ...overrides,
+    detected: {
+      subagents: detected?.subagents ?? subagents,
+      contextMode: detected?.contextMode ?? contextMode,
+    },
+    integrationSettings: {
+      subagents: integrationSettings?.subagents ?? "auto",
+      contextMode: integrationSettings?.contextMode ?? "auto",
+    },
+    configPath: path.join(process.cwd(), ".pi-gsd", "config.json"),
+    configWarnings: [],
+    ...topLevelOverrides,
     paths: {
       ...paths,
-      ...overrides.paths,
+      ...pathOverrides,
     },
   };
 }

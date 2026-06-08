@@ -16,6 +16,7 @@
       "gsd-doctor",
       "gsd-run",
       "gsd-model",
+      "gsd-init-config",
       "gsd-*"
     ]
   }

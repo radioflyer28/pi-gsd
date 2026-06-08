@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import test from "node:test";
@@ -61,6 +61,28 @@ test("formatCapabilities reports planning directory and optional integrations", 
   }
 });
 
+test("formatCapabilities reports integrations disabled by pi-gsd config", () => {
+  const cwd = mkdtempSync(path.join(tmpdir(), "pi-gsd-format-disabled-"));
+
+  try {
+    const text = formatCapabilities(
+      cwd,
+      capabilities("inline", {
+        detected: { subagents: true, contextMode: true },
+        integrationSettings: { subagents: "off", contextMode: "off" },
+        configPath: path.join(cwd, ".pi-gsd", "config.json"),
+        paths: { subagents: "<active-tool:subagent>", contextMode: "<active-tool:ctx_execute>" },
+      }),
+    );
+
+    assert.match(text, /mode: `inline`/);
+    assert.match(text, /pi-subagents: detected, disabled by .*\.pi-gsd.*config\.json/);
+    assert.match(text, /context-mode: detected, disabled by .*\.pi-gsd.*config\.json/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("dispatcher status returns capability details without executing commands", async () => {
   const cwd = mkdtempSync(path.join(tmpdir(), "pi-gsd-status-"));
   let execCalled = false;
@@ -83,6 +105,32 @@ test("dispatcher status returns capability details without executing commands", 
   }
 });
 
+test("dispatcher init-config creates default .pi-gsd config files without overwriting", async () => {
+  const cwd = mkdtempSync(path.join(tmpdir(), "pi-gsd-init-"));
+  const dispatcher = createGsdDispatcher({ detect: () => capabilities("inline") });
+
+  try {
+    const result = await dispatcher.initConfig(cwd);
+    const configPath = path.join(cwd, ".pi-gsd", "config.json");
+    const routingPath = path.join(cwd, ".pi-gsd", "model-routing.json");
+
+    assert.match(result.text, /pi-gsd config initialized/);
+    assert.equal(JSON.parse(readFileSync(configPath, "utf8")).integrations.subagents, "auto");
+    assert.equal(JSON.parse(readFileSync(routingPath, "utf8")).tiers.heavy.thinking, "xhigh");
+
+    writeFileSync(configPath, JSON.stringify({ integrations: { subagents: "off" } }));
+    const second = await dispatcher.initConfig(cwd);
+    assert.match(second.text, /unchanged: .*config\.json/);
+    assert.equal(JSON.parse(readFileSync(configPath, "utf8")).integrations.subagents, "off");
+
+    const forced = await dispatcher.initConfig(cwd, true);
+    assert.match(forced.text, /overwritten: .*config\.json/);
+    assert.equal(JSON.parse(readFileSync(configPath, "utf8")).integrations.subagents, "auto");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("dispatcher doctor includes integration and state-boundary guidance", async () => {
   const dispatcher = createGsdDispatcher({
     detect: () => capabilities("delegated-ctx"),
@@ -95,6 +143,24 @@ test("dispatcher doctor includes integration and state-boundary guidance", async
   assert.match(result.text, /subagent\(\{ action: "list" \}\)/);
   assert.match(result.text, /ctx_execute/);
   assert.match(result.text, /Do not create or assume `\.gsd\/`/);
+});
+
+test("dispatcher doctor omits optional integration guidance when integrations are disabled", async () => {
+  const dispatcher = createGsdDispatcher({
+    detect: () =>
+      capabilities("inline", {
+        detected: { subagents: true, contextMode: true },
+        integrationSettings: { subagents: "off", contextMode: "off" },
+      }),
+    externalGsdSkillPaths: () => [],
+  });
+
+  const result = await dispatcher.doctor(process.cwd());
+
+  assert.doesNotMatch(result.text, /subagent\(\{ action: "list" \}\)/);
+  assert.doesNotMatch(result.text, /ctx_execute/);
+  assert.match(result.text, /pi-subagents: detected, disabled/);
+  assert.match(result.text, /context-mode: detected, disabled/);
 });
 
 test("dispatcher doctor warns when external global gsd skills are present", async () => {

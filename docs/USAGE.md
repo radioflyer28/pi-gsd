@@ -103,9 +103,15 @@ Examples:
 
 If the route inherits or omits the model, the current Pi model is left unchanged. Thinking level is applied when the route resolves to a concrete Pi thinking level.
 
+### `/gsd-init-config`
+
+Creates `.pi-gsd/config.json` and `.pi-gsd/model-routing.json` with pi-gsd defaults. Existing files are left unchanged.
+
+Use this when you want an editable, project-local starting point for integration masks or model routing.
+
 ## Agent tool usage
 
-Agents can call the `gsd` tool directly with one of four actions.
+Agents can call the `gsd` tool directly with one of five actions.
 
 ### Status
 
@@ -137,6 +143,33 @@ Other accepted selectors are `skill`, `command`, or a generic `target`.
 
 The result includes a Pi-native resolved model, thinking level, warnings, and a `subagent` block. When `subagent.model` is present, pass it to the `subagent` tool. When absent, omit `model` so pi-subagents inherits/defaults naturally.
 
+### Init config
+
+```json
+{ "action": "init-config" }
+```
+
+By default, this creates missing files but does not overwrite existing project config. To reset both files to defaults:
+
+```json
+{ "action": "init-config", "force": true }
+```
+
+## Optional integration config
+
+`pi-gsd` auto-detects `context-mode` and `pi-subagents` by default. To make this project ignore either integration for GSD status and guidance, add `.pi-gsd/config.json`:
+
+```json
+{
+  "integrations": {
+    "subagents": "auto",
+    "contextMode": "auto"
+  }
+}
+```
+
+Supported values are `"auto"` and `"off"`. `"off"` does not uninstall or hide the underlying Pi tool globally; it only makes pi-gsd treat that integration as unavailable for this project. If `contextMode` is `"off"`, pi-gsd's context-mode guard allows context-mode tool calls without adding pi-gsd warnings or blocks.
+
 ## How context-mode should be used
 
 Use context-mode when it avoids loading noisy or bulky raw content into the model context.
@@ -161,7 +194,7 @@ When a small file must be edited or understood exactly, use Pi's normal `read` a
 
 ## Context-mode guard behavior
 
-`pi-gsd` registers a guard for context-mode tool calls.
+`pi-gsd` registers a guard for context-mode tool calls unless this project's `.pi-gsd/config.json` sets `integrations.contextMode` to `"off"`.
 
 | Tool call pattern | Behavior | Why |
 | --- | --- | --- |

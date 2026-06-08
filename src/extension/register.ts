@@ -120,7 +120,9 @@ async function executeGsd(
         ? await dispatcher.doctor(cwd, routingContext)
         : action === "resolve-model"
           ? await dispatcher.resolveModel(params, cwd, routingContext)
-          : await dispatcher.run(args, cwd, signal);
+          : action === "init-config"
+            ? await dispatcher.initConfig(cwd, params.force === true)
+            : await dispatcher.run(args, cwd, signal);
 
   return toToolResult(result.text, result.details);
 }
@@ -363,12 +365,13 @@ export function registerPiGsdCore(pi: RegisterablePiApi, options: RegisterPiGsdO
     name: "gsd",
     label: "GSD",
     description:
-      "Thin Pi wrapper around upstream GSD Core. Use status/doctor first; use run for gsd-tools CLI calls when available.",
+      "Thin Pi wrapper around upstream GSD Core. Use status/doctor first; use run for gsd-tools CLI calls; use init-config to create .pi-gsd defaults.",
     promptSnippet: "Inspect and call upstream GSD Core through the pi-gsd adapter.",
     promptGuidelines: [
       "Use pi-gsd as a thin wrapper over upstream GSD Core; do not duplicate GSD workflow semantics.",
       "Use `.planning/` only for normal GSD-compatible project records.",
       "Use context-mode `ctx_*` tools only for bulky or transient context when available.",
+      "Use `gsd` action `init-config` only when the user wants editable project-local pi-gsd defaults.",
       "Use `gsd` action `resolve-model` to resolve Pi-native model/thinking guidance for GSD agents, skills, or commands.",
       "When pi-subagents is available, consume the shared pi-gsd model-routing result and pass its explicit `subagent.model` only when present; otherwise omit model to inherit/default.",
       "Use pi-subagents directly for large planning/execution/review when available; do not expect the `gsd` tool to orchestrate subagents internally.",
@@ -401,6 +404,11 @@ export function registerPiGsdCore(pi: RegisterablePiApi, options: RegisterPiGsdO
   pi.registerCommand?.("gsd-model", {
     description: "Resolve and explicitly switch to the Pi model/thinking level configured for a GSD agent, skill, or command.",
     handler: gsdModelCommandHandler(options.defaultCwd, pi, sessionModelOverrides),
+  });
+
+  pi.registerCommand?.("gsd-init-config", {
+    description: "Create .pi-gsd/config.json and .pi-gsd/model-routing.json with pi-gsd defaults.",
+    handler: commandHandler(dispatcher, "init-config", options.defaultCwd, pi, sessionModelOverrides),
   });
 
   for (const command of gsdCoreCommands) {

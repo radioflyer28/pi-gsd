@@ -3,6 +3,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { loadPiGsdConfig, type IntegrationMode } from "./config.ts";
+
 export type CapabilityName = "gsdCore" | "gsdTools" | "subagents" | "contextMode";
 
 export type GsdMode = "inline" | "ctx-inline" | "delegated" | "delegated-ctx";
@@ -15,6 +17,16 @@ export type Capabilities = {
   contextMode: boolean;
   mode: GsdMode;
   paths: CapabilityPaths;
+  detected: {
+    subagents: boolean;
+    contextMode: boolean;
+  };
+  integrationSettings: {
+    subagents: IntegrationMode;
+    contextMode: IntegrationMode;
+  };
+  configPath: string;
+  configWarnings: string[];
 };
 
 export type ExistsProbe = (candidate: string) => boolean;
@@ -112,6 +124,8 @@ export function detectCapabilities(options: CapabilityDetectionOptions = {}): Ca
     contextMode: options.candidatePaths?.contextMode ?? defaults.contextMode,
   };
 
+  const loadedConfig = loadPiGsdConfig(cwd);
+  const integrationSettings = loadedConfig.config.integrations;
   const activeToolNames = new Set(options.activeToolNames ?? []);
   const hasActiveSubagentTool = hasAnyTool(activeToolNames, ["subagent"]);
   const hasActiveContextModeTool = hasAnyTool(activeToolNames, [
@@ -133,8 +147,10 @@ export function detectCapabilities(options: CapabilityDetectionOptions = {}): Ca
       : firstExisting(candidates.contextMode, exists),
   };
 
-  const hasSubagents = Boolean(paths.subagents);
-  const hasContextMode = Boolean(paths.contextMode);
+  const detectedSubagents = Boolean(paths.subagents);
+  const detectedContextMode = Boolean(paths.contextMode);
+  const hasSubagents = integrationSettings.subagents !== "off" && detectedSubagents;
+  const hasContextMode = integrationSettings.contextMode !== "off" && detectedContextMode;
   const mode: GsdMode =
     hasSubagents && hasContextMode
       ? "delegated-ctx"
@@ -150,5 +166,12 @@ export function detectCapabilities(options: CapabilityDetectionOptions = {}): Ca
     contextMode: hasContextMode,
     mode,
     paths,
+    detected: {
+      subagents: detectedSubagents,
+      contextMode: detectedContextMode,
+    },
+    integrationSettings,
+    configPath: loadedConfig.path,
+    configWarnings: loadedConfig.warnings,
   };
 }
