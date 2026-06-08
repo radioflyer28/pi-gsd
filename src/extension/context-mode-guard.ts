@@ -65,6 +65,33 @@ const BULKY_OR_TRANSIENT_EXTENSIONS = new Set([
   ".tsv",
 ]);
 
+const SMALL_FILE_READ_EDIT_EXTENSIONS = new Set([
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".cjs",
+  ".py",
+  ".go",
+  ".rs",
+  ".java",
+  ".kt",
+  ".cs",
+  ".rb",
+  ".php",
+  ".sh",
+  ".bash",
+  ".zsh",
+  ".fish",
+  ".ps1",
+  ".css",
+  ".scss",
+  ".html",
+  ".vue",
+  ".svelte",
+]);
+
 const SMALL_FILE_WARNING_BYTES = 8 * 1024;
 
 function asString(value: unknown): string | undefined {
@@ -107,6 +134,13 @@ function userExplicitlyRequestedPlanningIndex(ctx?: ToolCallContext): boolean {
   return /\b(index|cache|ingest|store)\b/.test(text) && /\.planning|planning directory|planning folder/.test(text);
 }
 
+function userExplicitlyRequestedComputedFileProcessing(ctx?: ToolCallContext): boolean {
+  const text = latestUserText(ctx).toLowerCase();
+  return /\b(count|parse|extract|summari[sz]e|filter|aggregate|derive|calculate|compute|grep|match|find occurrences)\b/.test(
+    text,
+  );
+}
+
 function safeStat(candidate: string): fs.Stats | null {
   try {
     return fs.statSync(candidate);
@@ -119,6 +153,11 @@ function isBulkyOrTransientPath(candidate: string): boolean {
   const ext = path.extname(candidate).toLowerCase();
   if (BULKY_OR_TRANSIENT_EXTENSIONS.has(ext)) return true;
   return /(^|[\\/])(coverage|dist|build|tmp|temp|logs?|test-results?|reports?)([\\/]|$)/i.test(candidate);
+}
+
+function isSmallFileWhereReadEditIsUsuallyBetter(candidate: string): boolean {
+  if (isPlanningPath(candidate)) return true;
+  return SMALL_FILE_READ_EDIT_EXTENSIONS.has(path.extname(candidate).toLowerCase());
 }
 
 export function evaluateContextModeToolCall(
@@ -169,12 +208,14 @@ export function evaluateContextModeToolCall(
 
     const candidate = normalizeCandidate(rawPath, cwd);
     if (isBulkyOrTransientPath(candidate)) return { action: "allow" };
+    if (userExplicitlyRequestedComputedFileProcessing(ctx)) return { action: "allow" };
+    if (!isSmallFileWhereReadEditIsUsuallyBetter(candidate)) return { action: "allow" };
 
     const info = stat(candidate);
     if (info?.isFile() && info.size > 0 && info.size <= SMALL_FILE_WARNING_BYTES) {
       return {
         action: "warn",
-        reason: `File is small (${info.size} bytes). Prefer read/edit for small files; reserve context-mode for bulky or noisy context.`,
+        reason: `Small source/planning file (${info.size} bytes). Prefer read/edit when exact file context or edits are likely; reserve context-mode for bulky/noisy or computed extraction tasks.`,
       };
     }
   }

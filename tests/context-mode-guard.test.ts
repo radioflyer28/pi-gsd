@@ -58,7 +58,7 @@ test("context-mode guard warns on individual .planning artifacts without blockin
   assert.match(decision.reason, /Prefer direct reads/);
 });
 
-test("context-mode guard warns when ctx_execute_file is used for a small non-transient file", () => {
+test("context-mode guard warns when ctx_execute_file is used for a small source file", () => {
   const decision = evaluateContextModeToolCall(
     { toolName: "ctx_execute_file", input: { path: "src/extension/register.ts" } },
     { cwd: process.cwd() },
@@ -66,7 +66,39 @@ test("context-mode guard warns when ctx_execute_file is used for a small non-tra
   );
 
   assert.equal(decision.action, "warn");
-  assert.match(decision.reason, /File is small/);
+  assert.match(decision.reason, /Small source\/planning file/);
+});
+
+test("context-mode guard allows small data files where read/edit is not clearly better", () => {
+  const decision = evaluateContextModeToolCall(
+    { toolName: "ctx_execute_file", input: { path: "fixtures/example.json" } },
+    { cwd: process.cwd() },
+    { stat: () => fileStats(1024) },
+  );
+
+  assert.equal(decision.action, "allow");
+});
+
+test("context-mode guard allows explicit computed extraction from small source files", () => {
+  const decision = evaluateContextModeToolCall(
+    { toolName: "ctx_execute_file", input: { path: "src/extension/register.ts" } },
+    {
+      cwd: process.cwd(),
+      sessionManager: {
+        getBranch: () => [
+          {
+            message: {
+              role: "user",
+              content: "Count how many registerCommand calls are in src/extension/register.ts without reading the whole file.",
+            },
+          },
+        ],
+      },
+    },
+    { stat: () => fileStats(1024) },
+  );
+
+  assert.equal(decision.action, "allow");
 });
 
 test("context-mode guard allows logs, reports, and other bulky/transient paths", () => {

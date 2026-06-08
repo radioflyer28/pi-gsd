@@ -66,7 +66,7 @@ GSD is not treated as a runtime-agnostic system install. Installing `pi-gsd` sho
 
 `context-mode` and `pi-subagents` are optional accelerators. `pi-gsd` detects and reports them, preferring active Pi tools such as `ctx_execute` and `subagent` over filesystem probes, then gives the model guidance to call `ctx_*` or `subagent` directly when useful. The `gsd` tool does not orchestrate subagents internally in v1.
 
-`pi-gsd` also installs a small context-mode guard. It blocks accidental wholesale indexing of `.planning/`, warns when context-mode is used for small files or durable planning artifacts, allows bulky/transient inputs like logs and reports without friction, and downgrades the `.planning/` block to a warning when the latest user request explicitly asks to index planning records.
+`pi-gsd` also installs a small context-mode guard. It blocks accidental wholesale indexing of `.planning/`, warns when context-mode is used for small source/planning files where read/edit is usually clearer, allows small data files plus bulky/transient inputs like logs and reports without friction, and downgrades the `.planning/` block to a warning when the latest user request explicitly asks to index planning records.
 
 ## State Boundary
 
