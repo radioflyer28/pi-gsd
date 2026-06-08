@@ -2,7 +2,7 @@
 
 `pi-gsd` is a thin [Pi](https://github.com/earendil-works/pi-coding-agent) package that exposes upstream `@opengsd/gsd-core` workflows inside Pi.
 
-It does **not** reimplement GSD. It registers a small Pi tool, a few slash commands, a skill, and guardrails that help Pi use GSD safely while keeping workflow behavior in upstream GSD Core.
+It does **not** reimplement GSD. It registers a small Pi tool, slash commands, and guardrails that help Pi use GSD safely while keeping workflow behavior in upstream GSD Core.
 
 ## Why?
 - I want to use GSD inside Pi.
@@ -25,7 +25,7 @@ It does **not** reimplement GSD. It registers a small Pi tool, a few slash comma
     - `/gsd-doctor`
     - `/gsd-run <args>`
     - `/gsd-model [agent|skill|command] <target>`
-- **`pi-gsd` skill** that tells agents how to use GSD from Pi without inventing parallel workflow semantics.
+- **Agent guidance embedded in extension tool metadata** so pi-gsd presents as an extension/package, not as a competing GSD skill.
 - **Optional integration awareness** for:
   - `context-mode` — context-efficient processing for bulky logs, broad scans, generated reports, and repeated search/filtering.
   - `pi-subagents` — fresh-context or parallel planning, execution, and review.

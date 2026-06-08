@@ -1,11 +1,6 @@
----
-name: pi-gsd
-description: Use when running GSD workflows from Pi, inspecting GSD project records, planning or executing phases, verifying work, or shipping through the GSD Core wrapper.
----
+# pi-gsd Agent Guidance
 
-# pi-gsd
-
-Use this skill when the user asks Pi to run GSD workflows, inspect GSD project records, plan phases, execute GSD tasks, verify work, or ship through GSD.
+This document preserves the former `pi-gsd` skill guidance as maintainer documentation. It is **not** registered as a Pi skill; runtime guidance should come from the pi-gsd extension tool metadata and prompt guidelines so it does not compete with upstream GSD Core skills.
 
 ## Runtime Behavior
 

@@ -10,7 +10,7 @@ test("package metadata exposes the expected Pi package resources", () => {
   assert.equal(pkg.name, "pi-gsd");
   assert.equal(pkg.private, true);
   assert.deepEqual(pkg.pi.extensions, ["./src/extension/index.ts"]);
-  assert.deepEqual(pkg.pi.skills, ["./skills"]);
+  assert.equal(pkg.pi.skills, undefined);
   assert.deepEqual(pkg.pi.prompts, ["./prompts"]);
 
   assert.equal(manifest.id, "pi-gsd");
