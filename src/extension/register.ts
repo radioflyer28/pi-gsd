@@ -14,7 +14,12 @@ import {
   expandGsdCoreCommandPrompt,
   type GsdCoreCommand,
 } from "./gsd-core-commands.ts";
-import { findPiModel, resolveModelRouting, type ModelRoutingContext } from "./model-routing.ts";
+import {
+  findPiModel,
+  resolveModelRouting,
+  type ModelRoutingContext,
+  type ResolvedModelRouting,
+} from "./model-routing.ts";
 
 type TextContent = {
   type: "text";
@@ -240,6 +245,74 @@ function gsdCoreCommandHandler(command: GsdCoreCommand, pi: RegisterablePiApi) {
   };
 }
 
+type ModelSwitchResult =
+  | { status: "unchanged"; message: string }
+  | { status: "failed"; message: string }
+  | { status: "error"; message: string }
+  | { status: "switched"; model: string; message: string };
+
+async function switchModelRef(
+  modelRef: string,
+  ctx: GsdExecutionContext | undefined,
+  pi: RegisterablePiApi,
+  notFoundMessage: string,
+): Promise<ModelSwitchResult> {
+  if (!ctx?.modelRegistry || !pi.setModel) {
+    return { status: "unchanged", message: "Model left unchanged; Pi model switching is unavailable in this runtime." };
+  }
+
+  const found = findPiModel(modelRef, ctx.modelRegistry);
+  if (!found) return { status: "error", message: notFoundMessage };
+
+  const switched = await pi.setModel(found);
+  if (!switched) {
+    return { status: "failed", message: `Could not switch to ${modelRef}; Pi reported missing auth or unavailable model.` };
+  }
+
+  return { status: "switched", model: modelRef, message: `Switched Pi model to ${modelRef}.` };
+}
+
+async function switchResolvedModel(
+  resolved: ResolvedModelRouting,
+  ctx: GsdExecutionContext | undefined,
+  pi: RegisterablePiApi,
+  sessionModelOverrides: Map<string, string>,
+): Promise<ModelSwitchResult> {
+  if (resolved.recommendedAction.mode === "prompt-user") {
+    const choice = await promptForFallbackModel(ctx, `Choose fallback model for ${resolved.target}`);
+    if (!choice) return { status: "unchanged", message: "Model left unchanged; prompt was unavailable, cancelled, or user chose inherit." };
+
+    const result = await switchModelRef(choice, ctx, pi, `Error: selected model ${choice} is no longer available.`);
+    if (result.status === "switched") {
+      sessionModelOverrides.set(resolved.target, choice);
+      return { ...result, message: `${result.message} Remembered for ${resolved.target} in this session.` };
+    }
+    return result;
+  }
+
+  if (resolved.recommendedAction.mode === "use-explicit" && resolved.model) {
+    const result = await switchModelRef(resolved.model, ctx, pi, `Error: resolved model ${resolved.model} is no longer available.`);
+    if (result.status === "switched") {
+      sessionModelOverrides.set(resolved.target, resolved.model);
+      return { ...result, message: `${result.message} Remembered for ${resolved.target} in this session.` };
+    }
+    return result;
+  }
+
+  return { status: "unchanged", message: "Model left unchanged; this route inherits/omits the model." };
+}
+
+function applyThinkingLevel(
+  resolved: ResolvedModelRouting,
+  pi: RegisterablePiApi,
+  modelSwitchResult: ModelSwitchResult,
+): string | undefined {
+  if (resolved.thinking === "inherit" || !pi.setThinkingLevel) return undefined;
+  if (modelSwitchResult.status === "failed") return "Thinking level left unchanged because model switch failed.";
+  pi.setThinkingLevel(resolved.thinking);
+  return `Set Pi thinking level to ${resolved.thinking}.`;
+}
+
 function gsdModelCommandHandler(defaultCwd: string | undefined, pi: RegisterablePiApi, sessionModelOverrides: Map<string, string>) {
   return async (argsOrCtx: unknown, maybeCtx?: GsdExecutionContext) => {
     const ctx = (maybeCtx ?? argsOrCtx) as GsdExecutionContext | undefined;
@@ -252,39 +325,14 @@ function gsdModelCommandHandler(defaultCwd: string | undefined, pi: Registerable
     ];
 
     if (resolved.warnings.length > 0) lines.push(...resolved.warnings.map((warning) => `Warning: ${warning}`));
-
     if (resolved.error) return { text: [...lines, `Error: ${resolved.error}`].join("\n") };
 
-    let modelSwitchFailed = false;
-    if (resolved.recommendedAction.mode === "prompt-user") {
-      const choice = await promptForFallbackModel(ctx, `Choose fallback model for ${resolved.target}`);
-      if (choice && ctx?.modelRegistry && pi.setModel) {
-        const found = findPiModel(choice, ctx.modelRegistry);
-        if (!found) return { text: [...lines, `Error: selected model ${choice} is no longer available.`].join("\n") };
-        const switched = await pi.setModel(found);
-        if (switched) sessionModelOverrides.set(resolved.target, choice);
-        modelSwitchFailed = !switched;
-        lines.push(switched ? `Switched Pi model to ${choice}. Remembered for ${resolved.target} in this session.` : `Could not switch to ${choice}; Pi reported missing auth or unavailable model.`);
-      } else {
-        lines.push("Model left unchanged; prompt was unavailable, cancelled, or user chose inherit.");
-      }
-    } else if (resolved.recommendedAction.mode === "use-explicit" && resolved.model && ctx?.modelRegistry && pi.setModel) {
-      const found = findPiModel(resolved.model, ctx.modelRegistry);
-      if (!found) return { text: [...lines, `Error: resolved model ${resolved.model} is no longer available.`].join("\n") };
-      const switched = await pi.setModel(found);
-      if (switched) sessionModelOverrides.set(resolved.target, resolved.model);
-      modelSwitchFailed = !switched;
-      lines.push(switched ? `Switched Pi model to ${resolved.model}. Remembered for ${resolved.target} in this session.` : `Could not switch to ${resolved.model}; Pi reported missing auth or unavailable model.`);
-    } else {
-      lines.push("Model left unchanged; this route inherits/omits the model.");
-    }
+    const modelSwitchResult = await switchResolvedModel(resolved, ctx, pi, sessionModelOverrides);
+    if (modelSwitchResult.status === "error") return { text: [...lines, modelSwitchResult.message].join("\n") };
+    lines.push(modelSwitchResult.message);
 
-    if (resolved.thinking !== "inherit" && pi.setThinkingLevel && !modelSwitchFailed) {
-      pi.setThinkingLevel(resolved.thinking);
-      lines.push(`Set Pi thinking level to ${resolved.thinking}.`);
-    } else if (resolved.thinking !== "inherit" && modelSwitchFailed) {
-      lines.push(`Thinking level left unchanged because model switch failed.`);
-    }
+    const thinkingMessage = applyThinkingLevel(resolved, pi, modelSwitchResult);
+    if (thinkingMessage) lines.push(thinkingMessage);
 
     return { text: lines.join("\n") };
   };

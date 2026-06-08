@@ -7,7 +7,9 @@
   "private": true,
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "tsc -p tsconfig.json",
+    "typecheck:test": "tsc -p tsconfig.test.json",
+    "check": "npm run typecheck && npm run typecheck:test",
+    "build": "tsc -p tsconfig.build.json",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "test:live-pi": "node scripts/live-pi-rpc-smoke.mjs"
   },

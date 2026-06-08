@@ -4,36 +4,38 @@
 
 ## Current Verification Signals
 
-- `npm test` passes 66 Node test-runner tests from `tests/*.test.ts`.
-- `npm run typecheck` passes for `src/**/*.ts` through `tsconfig.json`.
+- `npm test` passes 67 Node test-runner tests from `tests/*.test.ts`.
+- `npm run check` passes source and test TypeScript checks through `tsconfig.json` and `tsconfig.test.json`.
+- `npm run build` emits release-validation artifacts to `dist/` through `tsconfig.build.json`.
 - `npm audit --omit=dev --json` reports 0 production vulnerabilities.
-- CI in `.github/workflows/ci.yml` runs `npm ci`, `npm run typecheck`, `npm run build`, and `npm test` on Ubuntu with Node 22.
+- CI in `.github/workflows/ci.yml` runs `npm ci`, source typecheck, test typecheck, build, and unit tests on Ubuntu and Windows with Node 22.
 
 ## Tech Debt
 
 **Windows child-process launch path:**
-- Issue: `src/extension/dispatcher.ts:259-264` uses `spawn(command, args, { shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(command) })` for package-local `gsd-tools` fallback execution. Node emits `[DEP0190] DeprecationWarning` when the smoke test exercises this path because args are passed while `shell: true` may be active for `.cmd`/`.bat` launchers.
+- Status: Resolved on 2026-06-08.
+- Previous issue: `execWithNodeSpawn()` used `shell: true` for Windows `.cmd`/`.bat` launchers, producing Node `[DEP0190]` warnings and a larger quoting/injection surface.
 - Files: `src/extension/dispatcher.ts`, `tests/dispatcher.test.ts`, `tests/smoke.test.ts`
-- Impact: Windows users rely on the `.cmd` launcher returned by `gsdToolsCommandNames()` in `src/extension/capabilities.ts`; command arguments for `/gsd-run` are user-controlled and the shell-based fallback has a larger quoting/injection surface than direct exec. The warning also makes test logs noisy.
-- Fix approach: Replace the Windows `.cmd` fallback with a safer launcher strategy: resolve the package-local JS entrypoint for `@opengsd/gsd-core`, run it through `process.execPath`, or use a small Windows-specific argument-escaping helper with tests that cover spaces, quotes, metacharacters, and cancellation.
+- Current mitigation: package-local Windows shim paths are converted to the package-local `@opengsd/gsd-core/gsd-core/bin/gsd-tools.cjs` entrypoint and launched via `process.execPath` with `shell: false`. Regression tests cover spaces, quotes, and shell metacharacters.
 
-**Model-routing command mixes resolution, UI prompting, model switching, and thinking mutation:**
-- Issue: `gsdModelCommandHandler()` in `src/extension/register.ts:243-290` handles parsing, route resolution, optional UI select, model lookup, model switching, session override mutation, and thinking-level changes in one function.
+**Model-routing command side effects:**
+- Status: Improved on 2026-06-08.
+- Previous issue: `gsdModelCommandHandler()` mixed parsing, route resolution, UI select, model lookup, model switching, session override mutation, and thinking-level changes in one function.
 - Files: `src/extension/register.ts`, `src/extension/model-routing.ts`, `tests/register.test.ts`, `tests/model-routing.test.ts`
-- Impact: The command is hard to modify safely because one change can affect prompt fallback, session override persistence, and Pi runtime mutation. Tests cover the main flows, but future route modes or Pi API changes require editing a large multi-responsibility function.
-- Fix approach: Keep pure resolution in `src/extension/model-routing.ts`; extract command-side effects into small helpers such as `chooseFallbackModel()`, `switchResolvedModel()`, and `applyThinkingLevel()`. Add focused tests in `tests/register.test.ts` for each helper boundary.
+- Current mitigation: model switching and thinking mutation are isolated behind `switchModelRef()`, `switchResolvedModel()`, and `applyThinkingLevel()`, while pure resolution remains in `src/extension/model-routing.ts`. Existing tests cover prompt fallback, unavailable UI, failed model switch, inherited route, `fallback: "error"`, `fallback: "omit"`, ambiguous model names, target inference, and session override precedence.
+- Remaining concern: helpers still live in `register.ts`; move to a separate module only if routing side effects grow further.
 
-**Type coverage excludes tests and scripts:**
-- Issue: `tsconfig.json:14-16` includes only `src/**/*.ts`; `tests/*.test.ts` and `scripts/live-pi-rpc-smoke.mjs` are not typechecked by `npm run typecheck` or CI.
-- Files: `tsconfig.json`, `package.json`, `.github/workflows/ci.yml`, `tests/*.test.ts`, `scripts/live-pi-rpc-smoke.mjs`
-- Impact: Test helper API drift, incorrect mock shapes, and accidental use of unsupported Node APIs in tests/scripts can pass `npm run typecheck`. Runtime tests catch syntax and executed paths, but they do not provide full static coverage for mocks and test-only branches.
-- Fix approach: Add `tsconfig.test.json` with `noEmit: true`, `allowImportingTsExtensions: true`, and includes for `tests/**/*.ts`; add an npm script such as `typecheck:test` and run it in `.github/workflows/ci.yml`. Keep `scripts/live-pi-rpc-smoke.mjs` covered by a JS-aware lint/type path if desired.
+**Type coverage includes tests:**
+- Status: Resolved for TypeScript tests on 2026-06-08.
+- Previous issue: `tsconfig.json` included only `src/**/*.ts`, so `tests/*.test.ts` were not statically checked.
+- Files: `tsconfig.test.json`, `package.json`, `.github/workflows/ci.yml`, `tests/*.test.ts`, `scripts/live-pi-rpc-smoke.mjs`
+- Current mitigation: `npm run typecheck:test` uses `tsconfig.test.json` for tests, `npm run check` runs source + test typechecks, and CI runs both. The JS live Pi smoke script is still covered by runtime execution rather than static JS typechecking.
 
-**Build command is typecheck-only:**
-- Issue: `package.json:9-10` maps `build` to `tsc -p tsconfig.json`, while `tsconfig.json:9` sets `noEmit: true`. The package points Pi directly at `src/extension/index.ts` in `package.json:22-25`.
-- Files: `package.json`, `tsconfig.json`, `src/extension/index.ts`, `.github/workflows/ci.yml`
-- Impact: CI's `Build` step validates types but does not produce or validate emitted distribution artifacts. This is acceptable for a Pi TypeScript-source package, but it can confuse release automation or contributors expecting `npm run build` to create `dist/`.
-- Fix approach: Rename the current script to `check` or document that `build` is intentionally no-emit. If publishable JS artifacts are needed, add a separate emit tsconfig and test Pi loading from the emitted entrypoint.
+**Build command emits release-validation artifacts:**
+- Status: Resolved on 2026-06-08.
+- Previous issue: `npm run build` used the no-emit source typecheck config, which confused CI/release semantics.
+- Files: `package.json`, `tsconfig.build.json`, `tsconfig.json`, `src/extension/index.ts`, `.github/workflows/ci.yml`
+- Current mitigation: `npm run build` uses `tsconfig.build.json` to emit JS, declarations, and source maps to ignored `dist/`. Pi package metadata still loads `src/extension/index.ts` directly for local package development.
 
 ## Known Bugs
 
@@ -43,19 +45,19 @@
 - Trigger: Not detected.
 - Workaround: Not applicable.
 
-**Potential Windows `gsd-tools` argument handling bug:**
-- Symptoms: Node reports a child-process deprecation/security warning during tests that exercise `execWithNodeSpawn()`.
-- Files: `src/extension/dispatcher.ts:259-264`, `tests/smoke.test.ts`, `tests/dispatcher.test.ts`
-- Trigger: Running fallback spawn against a `.cmd` or `.bat` `gsd-tools` launcher on Windows with user-provided arguments.
-- Workaround: Prefer Pi's `pi.exec` path when available; it bypasses the fallback `spawn()` implementation in `src/extension/dispatcher.ts`.
+**Windows `gsd-tools` argument handling bug resolved:**
+- Status: Resolved on 2026-06-08.
+- Previous symptoms: Node reported a child-process deprecation/security warning during tests that exercised `execWithNodeSpawn()`.
+- Files: `src/extension/dispatcher.ts`, `tests/smoke.test.ts`, `tests/dispatcher.test.ts`
+- Current mitigation: fallback spawn now uses the package-local CJS entrypoint through `process.execPath` with `shell: false` when handed a package-local Windows shim.
 
 ## Security Considerations
 
 **User-controlled `/gsd-run` arguments reach process spawning:**
-- Risk: `parseCommandArgs()` in `src/extension/register.ts` parses slash-command text into args, and `createGsdDispatcher().run()` in `src/extension/dispatcher.ts` passes those args to `pi.exec` or fallback spawn. The fallback Windows shell path increases shell metacharacter exposure.
-- Files: `src/extension/register.ts:114-158`, `src/extension/dispatcher.ts:253-288`, `src/extension/capabilities.ts:31-39`
-- Current mitigation: Arguments are passed as an array for non-Windows direct spawn; the command path is resolved from package-local capability detection instead of a system-wide `gsd-tools`; tests verify parsed quoted arguments in `tests/register.test.ts`.
-- Recommendations: Add explicit Windows injection regression tests for `&`, `|`, `<`, `>`, `^`, quotes, and spaces. Prefer a shell-free launcher for all platforms.
+- Risk: `parseCommandArgs()` in `src/extension/register.ts` parses slash-command text into args, and `createGsdDispatcher().run()` in `src/extension/dispatcher.ts` passes those args to `pi.exec` or fallback spawn.
+- Files: `src/extension/register.ts`, `src/extension/dispatcher.ts`, `src/extension/capabilities.ts`
+- Current mitigation: Arguments are passed as arrays; command paths are resolved from package-local capability detection instead of system-wide `gsd-tools`; fallback spawn avoids shell execution for package-local Windows shims; tests verify parsed quoted arguments plus `&`, `|`, `^`, quotes, and spaces.
+- Recommendations: Keep `/gsd-run` argument handling array-based. Add more tests before supporting any raw shell command line mode.
 
 **Project model-routing config is read from `.pi-gsd/model-routing.json`:**
 - Risk: `loadModelRoutingConfig()` reads project-local JSON and can instruct `/gsd-model` to switch models or set thinking levels.
@@ -95,7 +97,7 @@
 - Files: `src/types/pi-sdk.d.ts`, `src/extension/register.ts`, `src/extension/index.ts`, `tests/test-utils.ts`
 - Why fragile: `RegisterablePiApi` and `ExtensionAPI` usage depend on Pi runtime APIs such as `registerTool`, `registerCommand`, `getAllTools`, `setModel`, `setThinkingLevel`, `sendUserMessage`, and `on`. Several values are typed as `unknown` or `Record<string, unknown>` to keep the adapter loose.
 - Safe modification: Before using a new Pi API, update `src/types/pi-sdk.d.ts`, extend `tests/test-utils.ts`, and add registration tests in `tests/register.test.ts` or `tests/context-mode-guard.test.ts`.
-- Test coverage: Unit tests mock the current API surface, but CI does not run `npm run test:live-pi`; live runtime compatibility is manually invoked through `scripts/live-pi-rpc-smoke.mjs`.
+- Test coverage: Unit tests mock the current API surface, tests are now statically typechecked, and live runtime compatibility is manually invoked through `scripts/live-pi-rpc-smoke.mjs`.
 
 **Context-mode guard heuristics:**
 - Files: `src/extension/context-mode-guard.ts`, `tests/context-mode-guard.test.ts`
@@ -138,9 +140,10 @@
 - Problem: `.github/workflows/ci.yml` runs unit tests only; `scripts/live-pi-rpc-smoke.mjs` is available through `npm run test:live-pi` but not part of CI.
 - Blocks: Automated verification that Pi can load `src/extension/index.ts`, expose dynamic upstream `gsd-*` commands, and report command source as `extension` in a real Pi runtime.
 
-**No cross-platform CI matrix:**
-- Problem: `.github/workflows/ci.yml` runs only `ubuntu-latest` despite Windows-specific launcher logic in `src/extension/capabilities.ts` and `src/extension/dispatcher.ts`.
-- Blocks: Automated confidence for `.cmd`/`.ps1` `gsd-tools` resolution, Windows path handling, and the fallback spawn path that emits the Node deprecation/security warning.
+**Cross-platform CI matrix present:**
+- Status: Resolved on 2026-06-08.
+- Previous problem: `.github/workflows/ci.yml` ran only `ubuntu-latest` despite Windows-specific launcher logic.
+- Current mitigation: CI now runs on both `ubuntu-latest` and `windows-latest` with Node 22, including source typecheck, test typecheck, build, and unit tests.
 
 **No coverage thresholds or coverage reporting:**
 - Problem: `package.json` has no coverage script and the Node test runner is invoked without coverage options.
@@ -149,10 +152,11 @@
 ## Test Coverage Gaps
 
 **Windows-specific execution and paths:**
-- What's not tested: Real Windows `.cmd`/`.ps1` launcher resolution, shell metacharacter handling, drive-letter paths, and cancellation behavior under Windows process semantics.
+- What's now tested: CI runs on Windows, fallback shim handling avoids shell launch, and unit coverage includes shell metacharacter handling plus cancellation behavior.
+- What's still not tested: real installed Pi command execution through `pi.exec`, UNC path variants, and `.ps1` launcher behavior beyond the CJS-entrypoint fallback.
 - Files: `src/extension/capabilities.ts`, `src/extension/dispatcher.ts`, `src/extension/context-mode-guard.ts`
-- Risk: Windows Pi users can encounter command-launch failures or argument-handling bugs that Linux CI misses.
-- Priority: High
+- Risk: Windows Pi users can encounter command-launch failures or argument-handling bugs that local mocks miss.
+- Priority: Medium
 
 **Live Pi extension compatibility:**
 - What's not tested: Actual Pi runtime registration of tools, commands, event hooks, and command-source metadata in CI.
@@ -160,11 +164,12 @@
 - Risk: A Pi SDK change can break installation or command exposure while unit mocks still pass.
 - Priority: High
 
-**Tests are not statically typechecked:**
-- What's not tested: Type correctness of `tests/*.test.ts`, mock Pi API shape in `tests/test-utils.ts`, and test-only helper contracts.
-- Files: `tsconfig.json`, `tests/test-utils.ts`, `tests/*.test.ts`
-- Risk: Type errors in tests can hide incorrect assumptions about the source API or Pi mock behavior.
-- Priority: Medium
+**Tests are statically typechecked:**
+- Status: Resolved on 2026-06-08.
+- What's now tested: Type correctness of `tests/*.test.ts`, mock Pi API shape in `tests/test-utils.ts`, and test-only helper contracts through `npm run typecheck:test`.
+- Files: `tsconfig.test.json`, `tests/test-utils.ts`, `tests/*.test.ts`
+- Remaining gap: `scripts/live-pi-rpc-smoke.mjs` is JavaScript and is covered by runtime execution, not static typechecking.
+- Priority: Low
 
 **Coverage for malformed upstream command body variants:**
 - What's not tested: Upstream command markdown using YAML fields beyond `name`, `description`, and `argument-hint`; body references that do not match `@~/.claude/gsd-core/`; positional placeholders beyond simple `$1` forms.

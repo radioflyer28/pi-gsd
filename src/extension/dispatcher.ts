@@ -250,15 +250,31 @@ class StreamingTextTail {
   }
 }
 
+function packageLocalGsdToolsEntrypoint(command: string): string | null {
+  const commandDir = path.dirname(command);
+  const candidate = path.resolve(commandDir, "..", "@opengsd", "gsd-core", "gsd-core", "bin", "gsd-tools.cjs");
+  return fs.existsSync(candidate) ? candidate : null;
+}
+
+function resolveSpawnInvocation(command: string, args: string[]): { command: string; args: string[] } {
+  if (/\.(cmd|bat|ps1)$/i.test(command)) {
+    const entrypoint = packageLocalGsdToolsEntrypoint(command);
+    if (entrypoint) return { command: process.execPath, args: [entrypoint, ...args] };
+  }
+
+  return { command, args };
+}
+
 async function execWithNodeSpawn(
   command: string,
   args: string[],
   options: { cwd: string; signal?: AbortSignal },
 ): Promise<PiExecResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
+    const invocation = resolveSpawnInvocation(command, args);
+    const child = spawn(invocation.command, invocation.args, {
       cwd: options.cwd,
-      shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(command),
+      shell: false,
       windowsHide: true,
       signal: options.signal,
     });

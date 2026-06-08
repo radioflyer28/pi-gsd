@@ -188,6 +188,31 @@ test("dispatcher run truncates large command output through the configured trunc
   assert.match(result.text, /^truncated:/);
 });
 
+test("dispatcher run avoids shell launch for package-local Windows shims", async () => {
+  const root = mkdtempSync(path.join(tmpdir(), "pi-gsd-win-shim-"));
+  const binDir = path.join(root, "node_modules", ".bin");
+  const coreBin = path.join(root, "node_modules", "@opengsd", "gsd-core", "gsd-core", "bin");
+  mkdirSync(binDir, { recursive: true });
+  mkdirSync(coreBin, { recursive: true });
+  const shim = path.join(binDir, "gsd-tools.cmd");
+  const entrypoint = path.join(coreBin, "gsd-tools.cjs");
+  writeFileSync(shim, "placeholder");
+  writeFileSync(entrypoint, "console.log(JSON.stringify(process.argv.slice(2)))");
+  const dispatcher = createGsdDispatcher({
+    gsdToolsCommand: shim,
+    detect: () => capabilities("inline"),
+  });
+
+  try {
+    const result = await dispatcher.run(["arg with spaces", "&", "|", "^caret", 'quote"value'], root);
+
+    assert.match(result.text, /gsd-tools exited with 0/);
+    assert.match(result.text, /\["arg with spaces","&","\|","\^caret","quote\\"value"\]/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("dispatcher run keeps spawned command output memory-bounded before final truncation", async () => {
   const dispatcher = createGsdDispatcher({
     gsdToolsCommand: process.execPath,

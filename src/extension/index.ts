@@ -66,7 +66,7 @@ function truncateForPiTool(text: string): string {
 }
 
 export default function registerPiGsdExtension(pi: ExtensionAPI): void {
-  registerPiGsdCore(pi, {
+  registerPiGsdCore(pi as unknown as Parameters<typeof registerPiGsdCore>[0], {
     parameters: TOOL_PARAMS,
     truncateOutput: truncateForPiTool,
   });

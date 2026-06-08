@@ -3,30 +3,27 @@ import type { Capabilities, GsdMode } from "../src/extension/capabilities.ts";
 export function capabilities(mode: GsdMode, overrides: Partial<Capabilities> = {}): Capabilities {
   const subagents = mode === "delegated" || mode === "delegated-ctx";
   const contextMode = mode === "ctx-inline" || mode === "delegated-ctx";
+  const paths = {
+    gsdCore: "package-local-gsd-core",
+    gsdTools: "package-local-gsd-tools",
+    subagents: subagents ? "subagent" : null,
+    contextMode: contextMode ? "context-mode" : null,
+  };
   return {
     gsdCore: true,
     subagents,
     contextMode,
     mode,
-    paths: {
-      gsdCore: "package-local-gsd-core",
-      gsdTools: "package-local-gsd-tools",
-      subagents: subagents ? "subagent" : null,
-      contextMode: contextMode ? "context-mode" : null,
-    },
     ...overrides,
     paths: {
-      gsdCore: "package-local-gsd-core",
-      gsdTools: "package-local-gsd-tools",
-      subagents: subagents ? "subagent" : null,
-      contextMode: contextMode ? "context-mode" : null,
+      ...paths,
       ...overrides.paths,
     },
   };
 }
 
 export function mockPi(
-  exec?: (...args: unknown[]) => Promise<unknown>,
+  exec?: (...args: unknown[]) => Promise<{ stdout?: string; stderr?: string; exitCode?: number } | string>,
   allTools: Array<{ name?: string }> = [],
 ) {
   let thinkingLevel: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" = "medium";

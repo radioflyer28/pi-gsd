@@ -167,13 +167,13 @@ Do not create or assume `.gsd/`; that name can collide with other GSD-family too
 
 ```bash
 npm install
-npm run typecheck
-npm run build
+npm run check       # typecheck source and tests
+npm run build       # emit JS/declarations to dist/ for release validation
 npm test
 npm run test:live-pi  # optional: requires the `pi` CLI on PATH; no LLM API key required
 ```
 
-The test suite uses Node's built-in test runner with TypeScript stripping. `test:live-pi` starts Pi in RPC mode, loads this extension, and verifies live slash-command registration for representative `/gsd-*` commands.
+The test suite uses Node's built-in test runner with TypeScript stripping. `build` validates emitted artifacts even though Pi package metadata loads `src/extension/index.ts` directly during local development. `test:live-pi` starts Pi in RPC mode, loads this extension, and verifies live slash-command registration for representative `/gsd-*` commands.
 
 ## Troubleshooting
 
