@@ -1,5 +1,8 @@
 {
   "intel": {
     "enabled": true
+  },
+  "graphify": {
+    "enabled": true
   }
 }
