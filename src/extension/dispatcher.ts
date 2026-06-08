@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 
 import { type Capabilities, defaultPackageRoot, detectCapabilities, type ExistsProbe } from "./capabilities.ts";
@@ -54,6 +55,7 @@ export type GsdDispatcherOptions = {
   gsdToolsCommand?: string;
   truncateOutput?: TextTruncator;
   detect?: (cwd: string) => Capabilities;
+  externalGsdSkillPaths?: () => string[];
 };
 
 export const DEFAULT_MAX_OUTPUT_CHARS = 50_000;
@@ -94,6 +96,24 @@ export function truncateTailText(
   ].join("\n");
 }
 
+export function findExternalGsdSkillPaths(homeDir = os.homedir()): string[] {
+  const skillsDir = path.join(homeDir, ".pi", "agent", "skills");
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(skillsDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  return entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .filter((name) => name.startsWith("gsd-") && name !== "pi-gsd")
+    .map((name) => path.join(skillsDir, name, "SKILL.md"))
+    .filter((candidate) => fs.existsSync(candidate))
+    .sort();
+}
+
 export function formatCapabilities(cwd: string, caps: Capabilities, exists: ExistsProbe = fs.existsSync): string {
   const planningDir = path.join(cwd, ".planning");
   return [
@@ -109,9 +129,33 @@ export function formatCapabilities(cwd: string, caps: Capabilities, exists: Exis
   ].join("\n");
 }
 
-function formatDoctor(cwd: string, caps: Capabilities, exists: ExistsProbe): string {
+function formatExternalGsdSkillWarning(externalSkillPaths: string[]): string[] {
+  if (externalSkillPaths.length === 0) return [];
+
+  const shown = externalSkillPaths.slice(0, 10).map((skillPath) => `- ${skillPath}`);
+  const remaining = externalSkillPaths.length - shown.length;
+  return [
+    "",
+    "## External GSD skill warning",
+    "",
+    `${externalSkillPaths.length} global \`gsd-*\` skill(s) were found outside pi-gsd. These skills can appear as slash commands and may bypass the thin pi-gsd adapter path.`,
+    "",
+    ...shown,
+    ...(remaining > 0 ? [`- ...and ${remaining} more`] : []),
+    "",
+    "If you want pi-gsd-only behavior, remove or disable those global skills and run `/reload`.",
+  ];
+}
+
+function formatDoctor(
+  cwd: string,
+  caps: Capabilities,
+  exists: ExistsProbe,
+  externalSkillPaths: string[],
+): string {
   return [
     formatCapabilities(cwd, caps, exists),
+    ...formatExternalGsdSkillWarning(externalSkillPaths),
     "",
     "## Integration guidance",
     "",
@@ -200,8 +244,9 @@ export function createGsdDispatcher(options: GsdDispatcherOptions = {}): GsdDisp
 
     async doctor(cwd) {
       const resultDetails = details(cwd);
+      const externalSkillPaths = (options.externalGsdSkillPaths ?? findExternalGsdSkillPaths)();
       return {
-        text: formatDoctor(cwd, resultDetails.caps, exists),
+        text: formatDoctor(cwd, resultDetails.caps, exists, externalSkillPaths),
         details: resultDetails,
       };
     },

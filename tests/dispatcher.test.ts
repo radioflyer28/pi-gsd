@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import test from "node:test";
 
 import {
   createGsdDispatcher,
+  findExternalGsdSkillPaths,
   formatCapabilities,
   resolveCwd,
   truncateTailText,
@@ -83,7 +84,10 @@ test("dispatcher status returns capability details without executing commands", 
 });
 
 test("dispatcher doctor includes integration and state-boundary guidance", async () => {
-  const dispatcher = createGsdDispatcher({ detect: () => capabilities("delegated-ctx") });
+  const dispatcher = createGsdDispatcher({
+    detect: () => capabilities("delegated-ctx"),
+    externalGsdSkillPaths: () => [],
+  });
 
   const result = await dispatcher.doctor(process.cwd());
 
@@ -91,6 +95,36 @@ test("dispatcher doctor includes integration and state-boundary guidance", async
   assert.match(result.text, /subagent\(\{ action: "list" \}\)/);
   assert.match(result.text, /ctx_execute/);
   assert.match(result.text, /Do not create or assume `\.gsd\/`/);
+});
+
+test("dispatcher doctor warns when external global gsd skills are present", async () => {
+  const dispatcher = createGsdDispatcher({
+    detect: () => capabilities("inline"),
+    externalGsdSkillPaths: () => ["/home/user/.pi/agent/skills/gsd-plan-phase/SKILL.md"],
+  });
+
+  const result = await dispatcher.doctor(process.cwd());
+
+  assert.match(result.text, /External GSD skill warning/);
+  assert.match(result.text, /may bypass the thin pi-gsd adapter path/);
+  assert.match(result.text, /gsd-plan-phase\/SKILL\.md/);
+});
+
+test("external GSD skill detector ignores pi-gsd and non-GSD skills", () => {
+  const home = mkdtempSync(path.join(tmpdir(), "pi-gsd-skills-"));
+  const skillsDir = path.join(home, ".pi", "agent", "skills");
+  mkdirSync(path.join(skillsDir, "gsd-plan-phase"), { recursive: true });
+  mkdirSync(path.join(skillsDir, "pi-gsd"), { recursive: true });
+  mkdirSync(path.join(skillsDir, "review"), { recursive: true });
+  writeFileSync(path.join(skillsDir, "gsd-plan-phase", "SKILL.md"), "---\nname: gsd-plan-phase\n---\n");
+  writeFileSync(path.join(skillsDir, "pi-gsd", "SKILL.md"), "---\nname: pi-gsd\n---\n");
+  writeFileSync(path.join(skillsDir, "review", "SKILL.md"), "---\nname: review\n---\n");
+
+  try {
+    assert.deepEqual(findExternalGsdSkillPaths(home), [path.join(skillsDir, "gsd-plan-phase", "SKILL.md")]);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
 });
 
 test("dispatcher run dispatches to package-local gsd-tools with args, cwd, and signal", async () => {
