@@ -213,3 +213,4 @@ Run `/reload` after editing extension code, or restart Pi. Local package install
 
 - [Design notes](docs/DESIGN.md)
 - [Usage guide](docs/USAGE.md)
+- [Maintenance and compatibility playbook](docs/MAINTENANCE.md)
