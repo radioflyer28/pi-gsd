@@ -76,8 +76,8 @@ test("formatCapabilities reports integrations disabled by pi-gsd config", () => 
     );
 
     assert.match(text, /mode: `inline`/);
-    assert.match(text, /pi-subagents: detected, disabled by .*\.pi-gsd.*config\.json/);
-    assert.match(text, /context-mode: detected, disabled by .*\.pi-gsd.*config\.json/);
+    assert.match(text, /pi-subagents: detected via active tool, disabled by .*\.pi-gsd.*config\.json/);
+    assert.match(text, /context-mode: detected via active tool, disabled by .*\.pi-gsd.*config\.json/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -131,6 +131,19 @@ test("dispatcher init-config creates default .pi-gsd config files without overwr
   }
 });
 
+test("dispatcher init-config returns diagnostics when its target cannot be created", async () => {
+  const cwd = mkdtempSync(path.join(tmpdir(), "pi-gsd-init-error-"));
+  writeFileSync(path.join(cwd, ".pi-gsd"), "not a directory");
+  const dispatcher = createGsdDispatcher({ detect: () => capabilities("inline") });
+
+  try {
+    const result = await dispatcher.initConfig(cwd);
+    assert.match(result.text, /could not initialize project configuration/i);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("dispatcher doctor includes integration and state-boundary guidance", async () => {
   const dispatcher = createGsdDispatcher({
     detect: () => capabilities("delegated-ctx"),
@@ -159,8 +172,55 @@ test("dispatcher doctor omits optional integration guidance when integrations ar
 
   assert.doesNotMatch(result.text, /subagent\(\{ action: "list" \}\)/);
   assert.doesNotMatch(result.text, /ctx_execute/);
-  assert.match(result.text, /pi-subagents: detected, disabled/);
-  assert.match(result.text, /context-mode: detected, disabled/);
+  assert.match(result.text, /pi-subagents: detected via active tool, disabled/);
+  assert.match(result.text, /context-mode: detected via active tool, disabled/);
+});
+
+test("dispatcher doctor reports package metadata, command discovery, and a bounded binary probe", async () => {
+  const calls: unknown[][] = [];
+  const dispatcher = createGsdDispatcher({
+    detect: () => capabilities("inline"),
+    externalGsdSkillPaths: () => [],
+    exec: async (...args: unknown[]) => {
+      calls.push(args);
+      return { stdout: "Usage: gsd-tools", exitCode: 0 };
+    },
+  });
+
+  const result = await dispatcher.doctor(process.cwd());
+
+  assert.match(result.text, /gsd-core version: 1\.7\.0/);
+  assert.match(result.text, /upstream command files: 71/);
+  assert.match(result.text, /Package-local gsd-tools --help completed/);
+  assert.deepEqual(calls[0]?.[1], ["--help"]);
+  assert.equal(result.details.core?.binaryProbe?.status, "healthy");
+});
+
+test("dispatcher doctor reports a killed Pi probe as a failure", async () => {
+  const dispatcher = createGsdDispatcher({
+    detect: () => capabilities("inline"),
+    externalGsdSkillPaths: () => [],
+    exec: async () => ({ code: 0, killed: true }),
+  });
+
+  const result = await dispatcher.doctor(process.cwd());
+
+  assert.equal(result.details.core?.binaryProbe?.status, "failed");
+  assert.match(result.text, /gsd-tools --help was cancelled or timed out/);
+});
+
+test("dispatcher doctor warns when the upstream Pi plugin may overlap", async () => {
+  const dispatcher = createGsdDispatcher({
+    detect: () => capabilities("inline", { upstreamPiPlugin: { activeTool: true, activeCommand: true } }),
+    externalGsdSkillPaths: () => [],
+    exec: async () => ({ exitCode: 0 }),
+  });
+
+  const result = await dispatcher.doctor(process.cwd());
+
+  assert.match(result.text, /Upstream Pi plugin coexistence warning/);
+  assert.match(result.text, /active upstream surface: `\/gsd`/);
+  assert.match(result.text, /active upstream surface: `gsd_invoke`/);
 });
 
 test("dispatcher doctor warns when external global gsd skills are present", async () => {
@@ -218,6 +278,21 @@ test("dispatcher run dispatches to package-local gsd-tools with args, cwd, and s
   }
 });
 
+test("dispatcher run turns launch failures into actionable diagnostics", async () => {
+  const dispatcher = createGsdDispatcher({
+    exec: async () => {
+      throw new Error("permission denied");
+    },
+    detect: () => capabilities("inline"),
+  });
+
+  const result = await dispatcher.run([], process.cwd());
+
+  assert.match(result.text, /could not launch its package-local `gsd-tools` binary/i);
+  assert.match(result.text, /permission denied/);
+  assert.match(result.text, /do not fall back to a system-wide GSD install/);
+});
+
 test("dispatcher run includes stderr and non-zero exit codes", async () => {
   const dispatcher = createGsdDispatcher({
     exec: async () => ({ stdout: "out", stderr: "err", exitCode: 7 }),
@@ -257,12 +332,14 @@ test("dispatcher run truncates large command output through the configured trunc
 test("dispatcher run avoids shell launch for package-local Windows shims", async () => {
   const root = mkdtempSync(path.join(tmpdir(), "pi-gsd-win-shim-"));
   const binDir = path.join(root, "node_modules", ".bin");
-  const coreBin = path.join(root, "node_modules", "@opengsd", "gsd-core", "gsd-core", "bin");
+  const coreDir = path.join(root, "node_modules", "@opengsd", "gsd-core");
+  const coreBin = path.join(coreDir, "gsd-core", "bin");
   mkdirSync(binDir, { recursive: true });
   mkdirSync(coreBin, { recursive: true });
   const shim = path.join(binDir, "gsd-tools.cmd");
   const entrypoint = path.join(coreBin, "gsd-tools.cjs");
   writeFileSync(shim, "placeholder");
+  writeFileSync(path.join(coreDir, "package.json"), JSON.stringify({ bin: { "gsd-tools": "gsd-core/bin/gsd-tools.cjs" } }));
   writeFileSync(entrypoint, "console.log(JSON.stringify(process.argv.slice(2)))");
   const dispatcher = createGsdDispatcher({
     gsdToolsCommand: shim,

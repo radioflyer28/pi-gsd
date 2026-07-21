@@ -119,7 +119,7 @@ Use `/gsd-model agent gsd-planner` to explicitly switch the current Pi model/thi
 /gsd-run roadmap --json
 ```
 
-The `run` action dispatches to the package-local `gsd-tools` binary. It uses Pi's `pi.exec` when available and falls back to Node child-process spawning for the package-local binary when `pi.exec` is unavailable.
+The `run` action dispatches to the package-local `gsd-tools` binary. It uses Pi's `pi.exec` when available and falls back to Node child-process spawning for the package-local binary when `pi.exec` is unavailable. Dynamic `/gsd-*` prompts include the same execution contract: translate every upstream CLI operation into `gsd({ action: "run", args: [...] })` or `/gsd-run`, never a global `gsd-tools` binary.
 
 Quoted arguments are supported:
 
@@ -138,11 +138,18 @@ By default, `pi-gsd` auto-detects `context-mode` and `pi-subagents` when their t
   "integrations": {
     "subagents": "auto",
     "contextMode": "auto"
+  },
+  "diagnostics": {
+    "sessionLog": "off"
   }
 }
 ```
 
-Set either value to `"off"` to make `pi-gsd` treat that integration as unavailable. For example, `"subagents": "off"` keeps GSD workflows single-agent even if the `subagent` tool exists; `"contextMode": "off"` also makes pi-gsd's context-mode guard inert for that project.
+Set either value to `"off"` to make `pi-gsd` treat that integration as unavailable. For example, `"subagents": "off"` keeps GSD workflows single-agent even if the `subagent` tool exists; `"contextMode": "off"` also makes pi-gsd's context-mode guard inert for that project. When Pi exposes an active-tool inventory, `pi-gsd` treats that runtime signal as authoritative and does not revive disabled tools from package files on disk.
+
+### Private diagnostics
+
+Set `diagnostics.sessionLog` to `"on"` to record a capped, argument-free command outcome log at `.pi-gsd/diagnostics.jsonl`. It is opt-in, best-effort support data—not GSD workflow state—and `/gsd-status` reports whether it is enabled. Keep it off for projects that do not need local troubleshooting history.
 
 ### context-mode
 
@@ -171,6 +178,10 @@ When `pi-subagents` is loaded, `pi-gsd` reports it and instructs agents to call 
 The `gsd` tool does not call subagents internally. Large planning, execution, review, and verification work should use `pi-subagents` directly from the parent agent when appropriate.
 
 Before delegating GSD-specific work, agents should call `gsd({ action: "resolve-model", agent: "gsd-planner" })` and consume the returned `subagent` block. Pass `subagent.model` only when present; otherwise omit `model` so pi-subagents inherits/defaults naturally.
+
+### Upstream Pi plugin coexistence
+
+GSD Core v1.7.0 also ships an installable native Pi plugin (`pi/gsd.cjs`). `pi-gsd` intentionally does not load it: the upstream plugin exposes a separate `/gsd` command, `gsd_invoke` tool, lifecycle listeners, and fixed Anthropic-tier model steering. Use either integration, not both; `pi-gsd` remains the provider-agnostic adapter with dynamic `/gsd-*` commands and Pi-native model routing. `/gsd-doctor` warns when it sees an active `/gsd` or `gsd_invoke` surface, or a likely upstream plugin file.
 
 ## State boundary
 
@@ -214,3 +225,4 @@ Run `/reload` after editing extension code, or restart Pi. Local package install
 - [Design notes](docs/DESIGN.md)
 - [Usage guide](docs/USAGE.md)
 - [Maintenance and compatibility playbook](docs/MAINTENANCE.md)
+- [Upstream Pi-integration proposals](docs/UPSTREAM-PROPOSALS.md)

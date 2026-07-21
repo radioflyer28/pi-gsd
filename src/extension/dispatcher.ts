@@ -5,6 +5,8 @@ import * as path from "node:path";
 
 import { type Capabilities, defaultPackageRoot, detectCapabilities, type ExistsProbe } from "./capabilities.ts";
 import { DEFAULT_PI_GSD_CONFIG, getPiGsdConfigPath } from "./config.ts";
+import { getPiGsdDiagnosticSummary, type PiGsdDiagnosticSummary } from "./diagnostics.ts";
+import { inspectGsdCoreCommands, type GsdCoreCommandInspection } from "./gsd-core-commands.ts";
 import {
   DEFAULT_MODEL_ROUTING_CONFIG,
   formatResolvedModelRouting,
@@ -21,12 +23,14 @@ export type PiExecResult = {
   stdout?: string;
   stderr?: string;
   exitCode?: number;
+  code?: number;
+  killed?: boolean;
 };
 
 export type PiExec = (
   command: string,
   args?: string[],
-  options?: { cwd?: string; signal?: AbortSignal },
+  options?: { cwd?: string; signal?: AbortSignal; timeout?: number },
 ) => Promise<PiExecResult | string>;
 
 export type GsdAction = "status" | "doctor" | "run" | "resolve-model" | "init-config";
@@ -49,10 +53,21 @@ export type GsdExecutionContext = {
   modelRegistry?: PiModelRegistryLike;
 };
 
+export type GsdCoreDiagnostics = {
+  version?: string;
+  commandInspection: GsdCoreCommandInspection;
+  binaryProbe?: {
+    status: "healthy" | "failed" | "not-detected";
+    exitCode?: number;
+    message: string;
+  };
+};
+
 export type GsdDispatchResult = {
   text: string;
   details: {
     caps: Capabilities;
+    core?: GsdCoreDiagnostics;
   };
 };
 
@@ -136,12 +151,14 @@ function formatIntegrationStatus(
   name: "subagents" | "contextMode",
   caps: Capabilities,
 ): string {
+  const provenance = caps.provenance[name];
+  const detected = provenance === "active-tool" ? "detected via active tool" : provenance === "filesystem" ? "detected via filesystem fallback" : "not detected";
   if (caps.integrationSettings[name] === "off") {
     return caps.detected[name]
-      ? `detected, disabled by ${caps.configPath}`
+      ? `${detected}, disabled by ${caps.configPath}`
       : `disabled by ${caps.configPath}`;
   }
-  return caps[name] ? "detected" : "not detected";
+  return caps[name] ? detected : "not detected";
 }
 
 export function formatCapabilities(
@@ -149,23 +166,83 @@ export function formatCapabilities(
   caps: Capabilities,
   exists: ExistsProbe = fs.existsSync,
   modelContext?: ModelRoutingContext,
+  core?: GsdCoreDiagnostics,
+  diagnostics?: PiGsdDiagnosticSummary,
 ): string {
   const planningDir = path.join(cwd, ".planning");
   const currentModel = modelRef(modelContext?.model);
+  const upstreamPlugin = caps.upstreamPiPlugin;
+  const upstreamStatus = upstreamPlugin.activeTool || upstreamPlugin.activeCommand
+    ? [
+        ...(upstreamPlugin.activeCommand ? ["active `/gsd` command"] : []),
+        ...(upstreamPlugin.activeTool ? ["active `gsd_invoke` tool"] : []),
+      ].join("; ")
+    : upstreamPlugin.paths.length > 0
+      ? `possible plugin file: ${upstreamPlugin.paths.join(", ")}`
+      : "not detected";
   return [
     "# pi-gsd status",
     "",
     `- CWD: \`${cwd}\``,
     `- .planning present: ${exists(planningDir) ? "yes" : "no"}`,
     `- mode: \`${caps.mode}\``,
+    `- active Pi tool inventory: ${caps.activeToolInventoryAvailable ? "available" : "unavailable; using filesystem fallbacks"}`,
     `- package-local @opengsd/gsd-core / gsd-tools: ${caps.gsdCore ? "detected" : "not detected"}`,
+    `- gsd-core version: ${core?.version ?? "unknown"}`,
+    `- upstream command files: ${core ? `${core.commandInspection.commands.length}${core.commandInspection.warnings.length > 0 ? ` (${core.commandInspection.warnings.length} warning${core.commandInspection.warnings.length === 1 ? "" : "s"})` : ""}` : "unknown"}`,
     `- gsd-tools path: ${caps.paths.gsdTools ?? "not detected"}`,
     `- pi-subagents: ${formatIntegrationStatus("subagents", caps)}`,
     `- context-mode: ${formatIntegrationStatus("contextMode", caps)}`,
+    `- upstream GSD Pi plugin: ${upstreamStatus}`,
+    `- diagnostics log: ${diagnostics?.enabled ? `${diagnostics.entries} entr${diagnostics.entries === 1 ? "y" : "ies"} at ${diagnostics.path}` : "off"}`,
     `- current Pi model: ${currentModel ?? "unknown"}`,
     `- current Pi thinking: ${modelContext?.thinkingLevel ?? "unknown"}`,
     ...caps.configWarnings.map((warning) => `- config warning: ${warning}`),
+    ...(core?.commandInspection.warnings.map((warning) => `- command discovery warning: ${warning}`) ?? []),
   ].join("\n");
+}
+
+function inspectGsdCore(packageRoot: string, exists: ExistsProbe): GsdCoreDiagnostics {
+  const manifestPath = path.join(packageRoot, "node_modules", "@opengsd", "gsd-core", "package.json");
+  let version: string | undefined;
+  try {
+    if (exists(manifestPath)) {
+      const parsed = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as { version?: unknown };
+      if (typeof parsed.version === "string") version = parsed.version;
+    }
+  } catch {
+    // Discovery warnings are deliberately bounded; package metadata is optional diagnostic detail.
+  }
+
+  return {
+    ...(version ? { version } : {}),
+    commandInspection: inspectGsdCoreCommands({ packageRoot, exists }),
+  };
+}
+
+async function probeGsdTools(
+  exec: PiExec,
+  command: string | null,
+  cwd: string,
+): Promise<NonNullable<GsdCoreDiagnostics["binaryProbe"]>> {
+  if (!command) return { status: "not-detected", message: "Package-local gsd-tools binary was not detected." };
+
+  try {
+    const result = await exec(command, ["--help"], { cwd, timeout: 5_000 });
+    if (typeof result === "string") return { status: "healthy", exitCode: 0, message: "Package-local gsd-tools --help completed." };
+    const exitCode = result.exitCode ?? result.code ?? 0;
+    if (result.killed) {
+      return { status: "failed", exitCode, message: "Package-local gsd-tools --help was cancelled or timed out." };
+    }
+    return exitCode === 0
+      ? { status: "healthy", exitCode, message: "Package-local gsd-tools --help completed." }
+      : { status: "failed", exitCode, message: `Package-local gsd-tools --help exited with ${exitCode}.` };
+  } catch (error) {
+    return {
+      status: "failed",
+      message: `Could not launch package-local gsd-tools: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
 }
 
 function formatExternalGsdSkillWarning(externalSkillPaths: string[]): string[] {
@@ -186,11 +263,28 @@ function formatExternalGsdSkillWarning(externalSkillPaths: string[]): string[] {
   ];
 }
 
+function formatUpstreamPiPluginWarning(caps: Capabilities): string[] {
+  if (!caps.upstreamPiPlugin.activeTool && !caps.upstreamPiPlugin.activeCommand && caps.upstreamPiPlugin.paths.length === 0) return [];
+
+  return [
+    "",
+    "## Upstream Pi plugin coexistence warning",
+    "",
+    "The upstream GSD Pi plugin may also be active. Do not load it alongside pi-gsd: it exposes `/gsd`, `gsd_invoke`, lifecycle hooks, and independent model steering.",
+    ...(caps.upstreamPiPlugin.activeCommand ? ["- active upstream surface: `/gsd`"] : []),
+    ...(caps.upstreamPiPlugin.activeTool ? ["- active upstream surface: `gsd_invoke`"] : []),
+    ...caps.upstreamPiPlugin.paths.map((pluginPath) => `- possible plugin file: ${pluginPath}`),
+    "- Choose one integration, then reload Pi before relying on GSD commands.",
+  ];
+}
+
 function formatDoctor(
   cwd: string,
   caps: Capabilities,
   exists: ExistsProbe,
   externalSkillPaths: string[],
+  core: GsdCoreDiagnostics,
+  diagnostics: PiGsdDiagnosticSummary,
   modelContext?: ModelRoutingContext,
 ): string {
   const integrationGuidance = [
@@ -214,8 +308,14 @@ function formatDoctor(
   ];
 
   return [
-    formatCapabilities(cwd, caps, exists, modelContext),
+    formatCapabilities(cwd, caps, exists, modelContext, core, diagnostics),
     ...formatExternalGsdSkillWarning(externalSkillPaths),
+    ...formatUpstreamPiPluginWarning(caps),
+    "",
+    "## Compatibility probe",
+    "",
+    `- ${core.binaryProbe?.message ?? "Package-local gsd-tools was not probed."}`,
+    ...(core.commandInspection.warnings.length > 0 ? core.commandInspection.warnings.map((warning) => `- command discovery: ${warning}`) : []),
     "",
     "## Integration guidance",
     "",
@@ -238,7 +338,7 @@ function formatExecResult(result: PiExecResult | string): string {
 
   const stdout = result.stdout ?? "";
   const stderr = result.stderr ?? "";
-  const exitCode = result.exitCode ?? 0;
+  const exitCode = result.exitCode ?? result.code ?? 0;
   const output = [stdout, stderr ? `\n[stderr]\n${stderr}` : ""].join("").trim();
   return [`gsd-tools exited with ${exitCode}`, output ? `\n${output}` : ""].join("\n");
 }
@@ -314,8 +414,17 @@ class StreamingTextTail {
 
 function packageLocalGsdToolsEntrypoint(command: string): string | null {
   const commandDir = path.dirname(command);
-  const candidate = path.resolve(commandDir, "..", "@opengsd", "gsd-core", "gsd-core", "bin", "gsd-tools.cjs");
-  return fs.existsSync(candidate) ? candidate : null;
+  const packageDir = path.resolve(commandDir, "..", "@opengsd", "gsd-core");
+  const manifestPath = path.join(packageDir, "package.json");
+  try {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as { bin?: Record<string, unknown> };
+    const entrypoint = manifest.bin?.["gsd-tools"];
+    if (typeof entrypoint !== "string") return null;
+    const candidate = path.resolve(packageDir, entrypoint);
+    return fs.existsSync(candidate) ? candidate : null;
+  } catch {
+    return null;
+  }
 }
 
 function resolveSpawnInvocation(command: string, args: string[]): { command: string; args: string[] } {
@@ -329,17 +438,25 @@ function resolveSpawnInvocation(command: string, args: string[]): { command: str
 
 async function execWithNodeSpawn(
   command: string,
-  args: string[],
-  options: { cwd: string; signal?: AbortSignal },
+  args?: string[],
+  options?: { cwd?: string; signal?: AbortSignal; timeout?: number },
 ): Promise<PiExecResult> {
+  const cwd = options?.cwd ?? process.cwd();
   return new Promise((resolve, reject) => {
-    const invocation = resolveSpawnInvocation(command, args);
+    const invocation = resolveSpawnInvocation(command, args ?? []);
     const child = spawn(invocation.command, invocation.args, {
-      cwd: options.cwd,
+      cwd,
       shell: false,
       windowsHide: true,
-      signal: options.signal,
+      signal: options?.signal,
     });
+    let timedOut = false;
+    const timeout = options?.timeout
+      ? setTimeout(() => {
+          timedOut = true;
+          child.kill();
+        }, options.timeout)
+      : undefined;
     const streamTailChars = Math.floor(DEFAULT_MAX_OUTPUT_CHARS / 3);
     const stdout = new StreamingTextTail(streamTailChars);
     const stderr = new StreamingTextTail(streamTailChars);
@@ -353,14 +470,20 @@ async function execWithNodeSpawn(
       stderr.append(String(chunk));
     });
     child.on("error", (error) => {
-      if (options.signal?.aborted) {
+      if (timeout) clearTimeout(timeout);
+      if (options?.signal?.aborted) {
         resolve({ stdout: stdout.text(), stderr: stderr.text() || "Cancelled while running.", exitCode: 130 });
         return;
       }
       reject(error);
     });
     child.on("close", (exitCode) => {
-      resolve({ stdout: stdout.text(), stderr: stderr.text(), exitCode: exitCode ?? 0 });
+      if (timeout) clearTimeout(timeout);
+      resolve({
+        stdout: stdout.text(),
+        stderr: stderr.text() || (timedOut ? `Timed out after ${options?.timeout}ms.` : ""),
+        exitCode: timedOut ? 124 : exitCode ?? 0,
+      });
     });
   });
 }
@@ -375,21 +498,31 @@ export function createGsdDispatcher(options: GsdDispatcherOptions = {}): GsdDisp
     return { caps: detect(cwd) };
   }
 
+  function coreDiagnostics(): GsdCoreDiagnostics {
+    return inspectGsdCore(packageRoot, exists);
+  }
+
   return {
     async status(cwd, modelContext) {
       const resultDetails = details(cwd);
+      const core = coreDiagnostics();
+      const diagnostics = getPiGsdDiagnosticSummary(cwd);
       return {
-        text: formatCapabilities(cwd, resultDetails.caps, exists, modelContext),
-        details: resultDetails,
+        text: formatCapabilities(cwd, resultDetails.caps, exists, modelContext, core, diagnostics),
+        details: { ...resultDetails, core },
       };
     },
 
     async doctor(cwd, modelContext) {
       const resultDetails = details(cwd);
+      const core = coreDiagnostics();
+      const command = options.gsdToolsCommand ?? resultDetails.caps.paths.gsdTools;
+      core.binaryProbe = await probeGsdTools(options.exec ?? execWithNodeSpawn, command, cwd);
       const externalSkillPaths = (options.externalGsdSkillPaths ?? findExternalGsdSkillPaths)();
+      const diagnostics = getPiGsdDiagnosticSummary(cwd);
       return {
-        text: formatDoctor(cwd, resultDetails.caps, exists, externalSkillPaths, modelContext),
-        details: resultDetails,
+        text: formatDoctor(cwd, resultDetails.caps, exists, externalSkillPaths, core, diagnostics, modelContext),
+        details: { ...resultDetails, core },
       };
     },
 
@@ -403,11 +536,18 @@ export function createGsdDispatcher(options: GsdDispatcherOptions = {}): GsdDisp
     },
 
     async initConfig(cwd, force) {
-      const text = initPiGsdConfigFiles(cwd, force);
-      return {
-        text,
-        details: details(cwd),
-      };
+      try {
+        const text = initPiGsdConfigFiles(cwd, force);
+        return {
+          text,
+          details: details(cwd),
+        };
+      } catch (error) {
+        return {
+          text: `pi-gsd could not initialize project configuration: ${error instanceof Error ? error.message : String(error)}`,
+          details: details(cwd),
+        };
+      }
     },
 
     async run(args, cwd, signal) {
@@ -431,11 +571,22 @@ export function createGsdDispatcher(options: GsdDispatcherOptions = {}): GsdDisp
       }
 
       const exec = options.exec ?? execWithNodeSpawn;
-      const result = await exec(command, args, { cwd, signal });
-      return {
-        text: truncateOutput(formatExecResult(result)),
-        details: resultDetails,
-      };
+      try {
+        const result = await exec(command, args, { cwd, signal });
+        return {
+          text: truncateOutput(formatExecResult(result)),
+          details: resultDetails,
+        };
+      } catch (error) {
+        return {
+          text: [
+            "pi-gsd could not launch its package-local `gsd-tools` binary.",
+            error instanceof Error ? error.message : String(error),
+            "Repair the `@opengsd/gsd-core` dependency for this pi-gsd package; do not fall back to a system-wide GSD install.",
+          ].join("\n"),
+          details: resultDetails,
+        };
+      }
     },
   };
 }

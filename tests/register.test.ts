@@ -129,8 +129,10 @@ test("registered status and doctor commands ignore string args", async () => {
   const statusResponse = await pi.commands.get("gsd-status")!.handler("ignored args");
   const doctorResponse = await pi.commands.get("gsd-doctor")!.handler("ignored args");
 
-  assert.equal(calls.length, 0);
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0]?.[1], ["--help"]);
   assert.match(statusResponse.text, /# pi-gsd status/);
+  assert.match(doctorResponse.text, /## Compatibility probe/);
   assert.match(doctorResponse.text, /## Integration guidance/);
 });
 
@@ -183,6 +185,21 @@ test("registered detection uses active Pi tool inventory when available", async 
   assert.equal(result.details.caps.mode, "delegated-ctx");
   assert.match(toolText(result), /context-mode: detected/);
   assert.match(toolText(result), /pi-subagents: detected/);
+});
+
+test("runtime detection ignores configured-but-inactive optional tools", async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-gsd-inactive-tools-"));
+  const pi = mockPi(undefined, [{ name: "subagent" }, { name: "ctx_execute" }], []);
+  registerPiGsdCore(pi.api, { parameters: {}, defaultCwd: cwd, gsdCoreCommands: [] });
+
+  try {
+    const result = await pi.tools[0].execute("call-1", { action: "status" }, undefined, undefined, { cwd });
+    assert.equal(result.details.caps.mode, "inline");
+    assert.equal(result.details.caps.provenance.subagents, "not-detected");
+    assert.equal(result.details.caps.provenance.contextMode, "not-detected");
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
 });
 
 test("default extension registers the public tool with context-mode and subagent guidance", () => {
@@ -242,6 +259,22 @@ test("gsd-model command applies inherited route thinking without forcing a model
   assert.equal(pi.thinkingLevel, "xhigh");
 });
 
+test("gsd-model reports Pi's effective thinking level after capability clamping", async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-gsd-routing-clamped-"));
+  const pi = mockPi();
+  pi.api.setThinkingLevel = () => {};
+  pi.api.getThinkingLevel = () => "high";
+  registerPiGsdCore(pi.api, { parameters: {}, detect: () => capabilities("inline"), defaultCwd: cwd, gsdCoreCommands: [] });
+
+  const response = await pi.commands.get("gsd-model")!.handler("agent gsd-planner", {
+    cwd,
+    model: { provider: "openai", id: "current" },
+    modelRegistry: { getAvailable: () => [] },
+  });
+
+  assert.match(response.text, /Requested Pi thinking level xhigh; effective level is high/);
+});
+
 test("gsd-model command reports unavailable prompt UI without changing model", async () => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-gsd-routing-"));
   fs.mkdirSync(path.join(cwd, ".pi-gsd"));
@@ -260,9 +293,10 @@ test("gsd-model command reports unavailable prompt UI without changing model", a
     modelRegistry: { getAvailable: () => [] },
   });
 
-  assert.match(response.text, /Model left unchanged; prompt was unavailable/);
+  assert.match(response.text, /Model and thinking left unchanged; prompt was unavailable/);
+  assert.match(response.text, /Thinking level left unchanged because the model route was not applied/);
   assert.equal(pi.selectedModel, undefined);
-  assert.equal(pi.thinkingLevel, "xhigh");
+  assert.equal(pi.thinkingLevel, "medium");
 });
 
 test("gsd-model command leaves thinking unchanged when explicit model switch fails", async () => {

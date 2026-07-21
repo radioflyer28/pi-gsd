@@ -20,6 +20,12 @@ export type GsdCoreCommandDiscoveryOptions = {
   readdir?: (dirPath: string) => string[];
 };
 
+export type GsdCoreCommandInspection = {
+  commands: GsdCoreCommand[];
+  commandsDir: string;
+  warnings: string[];
+};
+
 function parseFrontmatter(markdown: string): { fields: Record<string, string>; body: string } {
   const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/m.exec(markdown);
   if (!match) return { fields: {}, body: markdown };
@@ -48,31 +54,50 @@ export function gsdCoreCommandsDir(packageRoot: string): string {
   return path.join(packageRoot, "node_modules", "@opengsd", "gsd-core", "commands", "gsd");
 }
 
-export function discoverGsdCoreCommands(options: GsdCoreCommandDiscoveryOptions = {}): GsdCoreCommand[] {
+export function inspectGsdCoreCommands(options: GsdCoreCommandDiscoveryOptions = {}): GsdCoreCommandInspection {
   const exists = options.exists ?? fs.existsSync;
   const packageRoot = options.packageRoot ?? defaultPackageRoot(exists);
   const commandsDir = options.commandsDir ?? gsdCoreCommandsDir(packageRoot);
-  if (!exists(commandsDir)) return [];
+  const warnings: string[] = [];
+  if (!exists(commandsDir)) {
+    warnings.push(`Upstream GSD command directory was not found: ${commandsDir}`);
+    return { commands: [], commandsDir, warnings };
+  }
 
   const readFile = options.readFile ?? ((filePath: string) => fs.readFileSync(filePath, "utf8"));
   const readdir = options.readdir ?? ((dirPath: string) => fs.readdirSync(dirPath));
+  let entries: string[];
+  try {
+    entries = readdir(commandsDir);
+  } catch (error) {
+    warnings.push(`Could not read upstream GSD command directory: ${error instanceof Error ? error.message : String(error)}`);
+    return { commands: [], commandsDir, warnings };
+  }
 
-  return readdir(commandsDir)
-    .filter((entry) => entry.endsWith(".md"))
-    .map((entry) => path.join(commandsDir, entry))
-    .map((filePath) => {
+  const commands: GsdCoreCommand[] = [];
+  for (const entry of entries.filter((candidate) => candidate.endsWith(".md")).sort()) {
+    const filePath = path.join(commandsDir, entry);
+    try {
       const markdown = readFile(filePath);
       const { fields, body } = parseFrontmatter(markdown);
       const names = commandNameFromFile(filePath, fields);
-      return {
+      commands.push({
         ...names,
         description: fields.description || `Run upstream GSD Core command ${names.coreName}`,
         argumentHint: fields["argument-hint"],
         path: filePath,
         body,
-      };
-    })
-    .sort((a, b) => a.slashName.localeCompare(b.slashName));
+      });
+    } catch (error) {
+      warnings.push(`Skipped unreadable upstream GSD command ${entry}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  return { commands: commands.sort((a, b) => a.slashName.localeCompare(b.slashName)), commandsDir, warnings };
+}
+
+export function discoverGsdCoreCommands(options: GsdCoreCommandDiscoveryOptions = {}): GsdCoreCommand[] {
+  return inspectGsdCoreCommands(options).commands;
 }
 
 function shellWords(input: string): string[] {
@@ -114,6 +139,17 @@ function packageLocalGsdCoreRoot(commandPath: string): string {
   return path.resolve(path.dirname(commandPath), "..", "..", "gsd-core");
 }
 
+function piExecutionGuidance(): string[] {
+  return [
+    "",
+    "## Pi execution contract",
+    "",
+    "- Run every upstream `gsd-tools` operation through pi-gsd: `gsd({ action: \"run\", args: [...] })` or `/gsd-run <args>`.",
+    "- Never use bare `gsd-tools`, `command -v gsd-tools`, a global GSD install, or runtime-home launch paths. Translate an upstream CLI example to its argument array while preserving its GSD semantics.",
+    "- Use Pi chat/UI for upstream interactive prompts and call pi-subagents directly only when the parent agent independently chooses delegation.",
+  ];
+}
+
 function piConfigCommandGuidance(command: GsdCoreCommand): string[] {
   if (command.coreName !== "gsd:config" && command.coreName !== "gsd:settings") return [];
 
@@ -124,7 +160,6 @@ function piConfigCommandGuidance(command: GsdCoreCommand): string[] {
     "This is a Pi runtime, so preserve the upstream GSD-visible result rather than Claude-specific mechanics:",
     "",
     "- Update GSD Core config in `.planning/config.json`, or `.planning/workstreams/<slug>/config.json` when GSD Core reports an active workstream.",
-    "- Use the pi-gsd tool for every `gsd-tools` operation: `gsd({ action: \"run\", args: [\"query\", ...] })`. Do not rely on `command -v gsd-tools`, global installs, or `~/.claude` paths.",
     "- Use upstream GSD Core query names and semantics such as `config-ensure-section`, `config-path`, `config-get`, `config-set`, and `config-set-model-profile`; do not hand-edit unrelated config keys.",
     "- If the upstream workflow asks for `AskUserQuestion`, ask the user naturally in Pi chat/UI and then write the selected values with GSD Core `config-set` queries.",
     "- Treat `.pi-gsd/` as pi-gsd wrapper-private config only; `/gsd-config` and `/gsd-settings` configure upstream GSD under `.planning/`.",
@@ -137,12 +172,13 @@ export function expandGsdCoreCommandPrompt(command: GsdCoreCommand, rawArgs: str
   const coreRoot = packageLocalGsdCoreRoot(command.path);
   let body = command.body.replace(/\$ARGUMENTS|\$@/g, args);
   body = body.replace(/\$(\d+)/g, (_match, index: string) => words[Number(index) - 1] ?? "");
-  body = body.replace(/@~\/\.claude\/gsd-core\//g, `@${coreRoot}${path.sep}`);
+  body = body.replace(/(@?)(?:~|\$HOME)\/\.claude\/gsd-core\//g, (_match, include: string) => `${include}${coreRoot}${path.sep}`);
 
   return [
     `Execute upstream GSD Core command \`${command.coreName}\` via pi-gsd.`,
     args ? `Arguments: ${args}` : "Arguments: <none>",
     `Package-local GSD Core root: ${coreRoot}`,
+    ...piExecutionGuidance(),
     ...piConfigCommandGuidance(command),
     "",
     body.trim(),

@@ -2,16 +2,20 @@ import * as path from "node:path";
 
 import type { Capabilities, GsdMode } from "../src/extension/capabilities.ts";
 
-type CapabilityOverrides = Omit<Partial<Capabilities>, "paths" | "detected" | "integrationSettings"> & {
+type CapabilityOverrides = Omit<Partial<Capabilities>, "paths" | "detected" | "provenance" | "integrationSettings" | "upstreamPiPlugin"> & {
   paths?: Partial<Capabilities["paths"]>;
   detected?: Partial<Capabilities["detected"]>;
+  provenance?: Partial<Capabilities["provenance"]>;
   integrationSettings?: Partial<Capabilities["integrationSettings"]>;
+  upstreamPiPlugin?: Partial<Capabilities["upstreamPiPlugin"]>;
 };
 
 export function capabilities(mode: GsdMode, overrides: CapabilityOverrides = {}): Capabilities {
-  const { paths: pathOverrides, detected, integrationSettings, ...topLevelOverrides } = overrides;
+  const { paths: pathOverrides, detected, provenance, integrationSettings, upstreamPiPlugin, ...topLevelOverrides } = overrides;
   const subagents = mode === "delegated" || mode === "delegated-ctx";
   const contextMode = mode === "ctx-inline" || mode === "delegated-ctx";
+  const detectedSubagents = detected?.subagents ?? subagents;
+  const detectedContextMode = detected?.contextMode ?? contextMode;
   const paths = {
     gsdCore: "package-local-gsd-core",
     gsdTools: "package-local-gsd-tools",
@@ -24,8 +28,18 @@ export function capabilities(mode: GsdMode, overrides: CapabilityOverrides = {})
     contextMode,
     mode,
     detected: {
-      subagents: detected?.subagents ?? subagents,
-      contextMode: detected?.contextMode ?? contextMode,
+      subagents: detectedSubagents,
+      contextMode: detectedContextMode,
+    },
+    provenance: {
+      subagents: provenance?.subagents ?? (detectedSubagents ? "active-tool" : "not-detected"),
+      contextMode: provenance?.contextMode ?? (detectedContextMode ? "active-tool" : "not-detected"),
+    },
+    activeToolInventoryAvailable: true,
+    upstreamPiPlugin: {
+      activeTool: upstreamPiPlugin?.activeTool ?? false,
+      activeCommand: upstreamPiPlugin?.activeCommand ?? false,
+      paths: upstreamPiPlugin?.paths ?? [],
     },
     integrationSettings: {
       subagents: integrationSettings?.subagents ?? "auto",
@@ -44,6 +58,7 @@ export function capabilities(mode: GsdMode, overrides: CapabilityOverrides = {})
 export function mockPi(
   exec?: (...args: unknown[]) => Promise<{ stdout?: string; stderr?: string; exitCode?: number } | string>,
   allTools: Array<{ name?: string }> = [],
+  activeTools: string[] | undefined = allTools.map((tool) => tool.name).filter((name): name is string => Boolean(name)),
 ) {
   let thinkingLevel: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" = "medium";
   let selectedModel: unknown;
@@ -61,6 +76,12 @@ export function mockPi(
       },
       getAllTools() {
         return [...allTools, ...tools.map((tool) => ({ name: tool.name as string | undefined }))];
+      },
+      getActiveTools() {
+        return activeTools;
+      },
+      getCommands() {
+        return [...commands.keys()].map((name) => ({ name }));
       },
       getThinkingLevel() {
         return thinkingLevel;

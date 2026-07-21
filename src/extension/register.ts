@@ -9,6 +9,7 @@ import {
   type TextTruncator,
 } from "./dispatcher.ts";
 import { detectCapabilities, type Capabilities, type ExistsProbe } from "./capabilities.ts";
+import { appendPiGsdDiagnostic } from "./diagnostics.ts";
 import {
   discoverGsdCoreCommands,
   expandGsdCoreCommandPrompt,
@@ -36,7 +37,9 @@ export type PiToolResult = {
 export type RegisterablePiApi = {
   registerTool?: (tool: Record<string, unknown>) => void;
   registerCommand?: (name: string, command: Record<string, unknown>) => void;
+  getActiveTools?: () => string[];
   getAllTools?: () => Array<{ name?: string }>;
+  getCommands?: () => Array<{ name?: string }>;
   getThinkingLevel?: () => "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
   setThinkingLevel?: (level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh") => void;
   setModel?: (model: unknown) => Promise<boolean>;
@@ -63,11 +66,21 @@ function toToolResult(text: string, details: PiToolResult["details"]): PiToolRes
   };
 }
 
-function activeToolNames(pi: RegisterablePiApi): string[] {
+function activeToolInventory(pi: RegisterablePiApi): { names: string[]; available: boolean } {
+  if (!pi.getActiveTools) return { names: [], available: false };
   try {
-    return pi.getAllTools?.().map((tool) => tool.name).filter((name): name is string => Boolean(name)) ?? [];
+    return { names: pi.getActiveTools().filter(Boolean), available: true };
   } catch {
-    return [];
+    return { names: [], available: false };
+  }
+}
+
+function activeCommandInventory(pi: RegisterablePiApi): { names: string[]; available: boolean } {
+  if (!pi.getCommands) return { names: [], available: false };
+  try {
+    return { names: pi.getCommands().map((command) => command.name).filter((name): name is string => Boolean(name)), available: true };
+  } catch {
+    return { names: [], available: false };
   }
 }
 
@@ -90,13 +103,25 @@ function createRuntimeAwareDetector(
   pi: RegisterablePiApi,
   options: { exists?: ExistsProbe; packageRoot?: string },
 ): (cwd: string) => Capabilities {
-  return (cwd: string) =>
-    detectCapabilities({
+  return (cwd: string) => {
+    const toolInventory = activeToolInventory(pi);
+    const commandInventory = activeCommandInventory(pi);
+    return detectCapabilities({
       cwd,
       exists: options.exists,
       packageRoot: options.packageRoot,
-      activeToolNames: activeToolNames(pi),
+      activeToolNames: toolInventory.names,
+      activeToolInventoryAvailable: toolInventory.available,
+      activeCommandNames: commandInventory.names,
+      activeCommandInventoryAvailable: commandInventory.available,
     });
+  };
+}
+
+function diagnosticOutcome(text: string): "ok" | "error" | "cancelled" {
+  if (/cancelled/i.test(text)) return "cancelled";
+  if (/\bexited with 0\b/i.test(text) || !/\berror\b|cannot|failed/i.test(text)) return "ok";
+  return "error";
 }
 
 async function executeGsd(
@@ -123,6 +148,15 @@ async function executeGsd(
           : action === "init-config"
             ? await dispatcher.initConfig(cwd, params.force === true)
             : await dispatcher.run(args, cwd, signal);
+
+  if (action === "run" || action === "init-config") {
+    appendPiGsdDiagnostic(cwd, {
+      event: "tool",
+      target: `gsd.${action}`,
+      outcome: diagnosticOutcome(result.text),
+      detail: action === "run" ? `argument count: ${args.length}` : undefined,
+    });
+  }
 
   return toToolResult(result.text, result.details);
 }
@@ -263,14 +297,19 @@ function gsdCoreCommandHandler(command: GsdCoreCommand, pi: RegisterablePiApi, d
     }
 
     pi.sendUserMessage(expandGsdCoreCommandPrompt(command, args));
+    appendPiGsdDiagnostic(resolveCwd({}, ctx, defaultCwd), {
+      event: "command",
+      target: command.coreName,
+      outcome: "ok",
+    });
   };
 }
 
 type ModelSwitchResult =
-  | { status: "unchanged"; message: string }
-  | { status: "failed"; message: string }
-  | { status: "error"; message: string }
-  | { status: "switched"; model: string; message: string };
+  | { status: "unchanged"; applyThinking: boolean; message: string }
+  | { status: "failed"; applyThinking: false; message: string }
+  | { status: "error"; applyThinking: false; message: string }
+  | { status: "switched"; applyThinking: true; model: string; message: string };
 
 async function switchModelRef(
   modelRef: string,
@@ -279,18 +318,18 @@ async function switchModelRef(
   notFoundMessage: string,
 ): Promise<ModelSwitchResult> {
   if (!ctx?.modelRegistry || !pi.setModel) {
-    return { status: "unchanged", message: "Model left unchanged; Pi model switching is unavailable in this runtime." };
+    return { status: "unchanged", applyThinking: false, message: "Model left unchanged; Pi model switching is unavailable in this runtime." };
   }
 
   const found = findPiModel(modelRef, ctx.modelRegistry);
-  if (!found) return { status: "error", message: notFoundMessage };
+  if (!found) return { status: "error", applyThinking: false, message: notFoundMessage };
 
   const switched = await pi.setModel(found);
   if (!switched) {
-    return { status: "failed", message: `Could not switch to ${modelRef}; Pi reported missing auth or unavailable model.` };
+    return { status: "failed", applyThinking: false, message: `Could not switch to ${modelRef}; Pi reported missing auth or unavailable model.` };
   }
 
-  return { status: "switched", model: modelRef, message: `Switched Pi model to ${modelRef}.` };
+  return { status: "switched", applyThinking: true, model: modelRef, message: `Switched Pi model to ${modelRef}.` };
 }
 
 async function switchResolvedModel(
@@ -301,7 +340,7 @@ async function switchResolvedModel(
 ): Promise<ModelSwitchResult> {
   if (resolved.recommendedAction.mode === "prompt-user") {
     const choice = await promptForFallbackModel(ctx, `Choose fallback model for ${resolved.target}`);
-    if (!choice) return { status: "unchanged", message: "Model left unchanged; prompt was unavailable, cancelled, or user chose inherit." };
+    if (!choice) return { status: "unchanged", applyThinking: false, message: "Model and thinking left unchanged; prompt was unavailable, cancelled, or user chose inherit." };
 
     const result = await switchModelRef(choice, ctx, pi, `Error: selected model ${choice} is no longer available.`);
     if (result.status === "switched") {
@@ -320,7 +359,7 @@ async function switchResolvedModel(
     return result;
   }
 
-  return { status: "unchanged", message: "Model left unchanged; this route inherits/omits the model." };
+  return { status: "unchanged", applyThinking: true, message: "Model left unchanged; this route inherits/omits the model." };
 }
 
 function applyThinkingLevel(
@@ -329,9 +368,12 @@ function applyThinkingLevel(
   modelSwitchResult: ModelSwitchResult,
 ): string | undefined {
   if (resolved.thinking === "inherit" || !pi.setThinkingLevel) return undefined;
-  if (modelSwitchResult.status === "failed") return "Thinking level left unchanged because model switch failed.";
+  if (!modelSwitchResult.applyThinking) return "Thinking level left unchanged because the model route was not applied.";
   pi.setThinkingLevel(resolved.thinking);
-  return `Set Pi thinking level to ${resolved.thinking}.`;
+  const effective = pi.getThinkingLevel?.();
+  return effective
+    ? `Requested Pi thinking level ${resolved.thinking}; effective level is ${effective}.`
+    : `Requested Pi thinking level ${resolved.thinking}; this Pi runtime does not expose the effective level.`;
 }
 
 function gsdModelCommandHandler(defaultCwd: string | undefined, pi: RegisterablePiApi, sessionModelOverrides: Map<string, string>) {

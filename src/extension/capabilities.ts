@@ -10,6 +10,7 @@ export type CapabilityName = "gsdCore" | "gsdTools" | "subagents" | "contextMode
 export type GsdMode = "inline" | "ctx-inline" | "delegated" | "delegated-ctx";
 
 export type CapabilityPaths = Record<CapabilityName, string | null>;
+export type IntegrationProvenance = "active-tool" | "filesystem" | "not-detected";
 
 export type Capabilities = {
   gsdCore: boolean;
@@ -20,6 +21,16 @@ export type Capabilities = {
   detected: {
     subagents: boolean;
     contextMode: boolean;
+  };
+  provenance: {
+    subagents: IntegrationProvenance;
+    contextMode: IntegrationProvenance;
+  };
+  activeToolInventoryAvailable: boolean;
+  upstreamPiPlugin: {
+    activeTool: boolean;
+    activeCommand: boolean;
+    paths: string[];
   };
   integrationSettings: {
     subagents: IntegrationMode;
@@ -38,6 +49,9 @@ export type CapabilityDetectionOptions = {
   exists?: ExistsProbe;
   candidatePaths?: Partial<Record<CapabilityName, string[]>>;
   activeToolNames?: string[];
+  activeToolInventoryAvailable?: boolean;
+  activeCommandNames?: string[];
+  activeCommandInventoryAvailable?: boolean;
 };
 
 function gsdToolCommandNames(): string[] {
@@ -74,6 +88,13 @@ function packageLocalGsdToolsCandidates(packageRoot: string): string[] {
   return gsdTools.map((command) => path.join(packageRoot, "node_modules", ".bin", command));
 }
 
+function upstreamPiPluginCandidates(homeDir: string, cwd: string): string[] {
+  return [
+    path.join(cwd, ".pi", "extensions", "gsd.cjs"),
+    path.join(homeDir, ".pi", "agent", "extensions", "gsd.cjs"),
+  ];
+}
+
 function defaultCandidatePaths(
   homeDir: string,
   packageRoot: string,
@@ -107,8 +128,28 @@ function firstExisting(candidates: string[], exists: ExistsProbe): string | null
   return null;
 }
 
-function hasAnyTool(activeToolNames: Set<string>, names: string[]): boolean {
-  return names.some((name) => activeToolNames.has(name));
+function firstActiveTool(activeToolNames: Set<string>, names: string[]): string | null {
+  return names.find((name) => activeToolNames.has(name)) ?? null;
+}
+
+function detectOptionalIntegration(
+  activeToolNames: Set<string>,
+  activeToolInventoryAvailable: boolean,
+  publicToolNames: string[],
+  candidates: string[],
+  exists: ExistsProbe,
+): { path: string | null; provenance: IntegrationProvenance } {
+  if (activeToolInventoryAvailable) {
+    const toolName = firstActiveTool(activeToolNames, publicToolNames);
+    return toolName
+      ? { path: `<active-tool:${toolName}>`, provenance: "active-tool" }
+      : { path: null, provenance: "not-detected" };
+  }
+
+  const pathOnDisk = firstExisting(candidates, exists);
+  return pathOnDisk
+    ? { path: pathOnDisk, provenance: "filesystem" }
+    : { path: null, provenance: "not-detected" };
 }
 
 export function detectCapabilities(options: CapabilityDetectionOptions = {}): Capabilities {
@@ -127,24 +168,29 @@ export function detectCapabilities(options: CapabilityDetectionOptions = {}): Ca
   const loadedConfig = loadPiGsdConfig(cwd);
   const integrationSettings = loadedConfig.config.integrations;
   const activeToolNames = new Set(options.activeToolNames ?? []);
-  const hasActiveSubagentTool = hasAnyTool(activeToolNames, ["subagent"]);
-  const hasActiveContextModeTool = hasAnyTool(activeToolNames, [
-    "ctx_execute",
-    "ctx_execute_file",
-    "ctx_search",
-    "ctx_index",
-    "ctx_batch_execute",
-  ]);
+  const activeToolInventoryAvailable = options.activeToolInventoryAvailable ?? options.activeToolNames !== undefined;
+  const activeCommandNames = new Set(options.activeCommandNames ?? []);
+  const activeCommandInventoryAvailable = options.activeCommandInventoryAvailable ?? options.activeCommandNames !== undefined;
+  const subagents = detectOptionalIntegration(
+    activeToolNames,
+    activeToolInventoryAvailable,
+    ["subagent"],
+    candidates.subagents,
+    exists,
+  );
+  const contextMode = detectOptionalIntegration(
+    activeToolNames,
+    activeToolInventoryAvailable,
+    ["ctx_execute", "ctx_execute_file", "ctx_search", "ctx_index", "ctx_batch_execute"],
+    candidates.contextMode,
+    exists,
+  );
 
   const paths: CapabilityPaths = {
     gsdCore: firstExisting(candidates.gsdCore, exists),
     gsdTools: firstExisting(candidates.gsdTools, exists),
-    subagents: hasActiveSubagentTool
-      ? "<active-tool:subagent>"
-      : firstExisting(candidates.subagents, exists),
-    contextMode: hasActiveContextModeTool
-      ? "<active-tool:ctx_execute>"
-      : firstExisting(candidates.contextMode, exists),
+    subagents: subagents.path,
+    contextMode: contextMode.path,
   };
 
   const detectedSubagents = Boolean(paths.subagents);
@@ -169,6 +215,16 @@ export function detectCapabilities(options: CapabilityDetectionOptions = {}): Ca
     detected: {
       subagents: detectedSubagents,
       contextMode: detectedContextMode,
+    },
+    provenance: {
+      subagents: subagents.provenance,
+      contextMode: contextMode.provenance,
+    },
+    activeToolInventoryAvailable,
+    upstreamPiPlugin: {
+      activeTool: activeToolInventoryAvailable && activeToolNames.has("gsd_invoke"),
+      activeCommand: activeCommandInventoryAvailable && activeCommandNames.has("gsd"),
+      paths: upstreamPiPluginCandidates(homeDir, cwd).filter((candidate) => exists(candidate)),
     },
     integrationSettings,
     configPath: loadedConfig.path,

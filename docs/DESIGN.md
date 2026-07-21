@@ -56,9 +56,9 @@ All GSD execution goes through a small dispatcher abstraction with these operati
 - `resolveModel`
 - `initConfig`
 
-The current dispatcher uses package-local `gsd-tools` as the execution seam. It prefers Pi's `pi.exec` when available and falls back to Node child-process spawning for the package-local binary when `pi.exec` is unavailable.
+The current dispatcher uses package-local `gsd-tools` as the execution seam. It prefers Pi's `pi.exec` when available and falls back to Node child-process spawning for the package-local binary when `pi.exec` is unavailable. Every dynamic upstream command prompt receives the same execution contract: translate CLI calls to `gsd({ action: "run", args: [...] })` or `/gsd-run`; never use a bare/global `gsd-tools` executable.
 
-The dispatcher must not fall back to a system-wide `gsd-tools` binary. A system-wide binary may be a different GSD version from the package-local dependency and could produce incompatible behavior or artifacts.
+The dispatcher must not fall back to a system-wide `gsd-tools` binary. A system-wide binary may be a different GSD version from the package-local dependency and could produce incompatible behavior or artifacts. Status inspects package metadata and command discovery; doctor additionally runs a bounded package-local `gsd-tools --help` probe and reports failures instead of claiming a healthy installation from a path alone.
 
 ## Capability model
 
@@ -71,9 +71,9 @@ The wrapper reports four modes:
 | `delegated` | `pi-subagents` detected. |
 | `delegated-ctx` | Both optional accelerators detected. |
 
-Detection prefers active Pi tool inventory when available. Public tools such as `ctx_execute` and `subagent` are stronger signals than files on disk because they prove the other Pi package is actually loaded.
+Detection prefers active Pi tool inventory when available. Public tools such as `ctx_execute` and `subagent` are stronger signals than files on disk because they prove the other Pi package is actually loaded. Status reports that provenance.
 
-Filesystem probes remain as a fallback for runtimes that do not expose active tool inventory.
+When Pi exposes an active inventory, a missing public tool is authoritative: `pi-gsd` does not revive an inactive integration from stale package files. Filesystem probes remain only for runtimes that do not expose active inventory.
 
 Project-local `.pi-gsd/config.json` can mask optional integrations after detection:
 
@@ -147,9 +147,9 @@ Do not put Pi-wrapper-specific material in `.planning/`. Other GSD skills and ru
 
 Do not create `.gsd/` for `pi-gsd` state. That name can collide with other GSD-family tools.
 
-`pi-gsd` may use `.pi-gsd/` for wrapper-private project metadata. `.pi-gsd/config.json` stores pi-gsd integration settings, and `.pi-gsd/model-routing.json` maps GSD agents/skills/commands to Pi-native model IDs, thinking levels, and fallback policy. These files are intentionally not GSD Core artifacts and should not be stored in `.planning/`.
+`pi-gsd` may use `.pi-gsd/` for wrapper-private project metadata. `.pi-gsd/config.json` stores pi-gsd integration settings and opt-in diagnostics settings; `.pi-gsd/model-routing.json` maps GSD agents/skills/commands to Pi-native model IDs, thinking levels, and fallback policy. These files are intentionally not GSD Core artifacts and should not be stored in `.planning/`.
 
-Model routing supports an opt-in `prompt` fallback. Prompt answers are remembered in memory per target for the current Pi extension session only; they are not written to `.planning/` or `.pi-gsd/` unless the user edits config explicitly.
+When `diagnostics.sessionLog` is explicitly enabled, `.pi-gsd/diagnostics.jsonl` stores a capped, argument-free local outcome trail for support. It is best-effort and must never control GSD workflow state. Model routing supports an opt-in `prompt` fallback. Prompt answers are remembered in memory per target for the current Pi extension session only; they are not written to `.planning/` or `.pi-gsd/` unless the user edits config explicitly.
 
 ## V1 decisions
 
@@ -161,6 +161,8 @@ Model routing supports an opt-in `prompt` fallback. Prompt answers are remembere
 - Do not ship packaged `gsd.planner`, `gsd.executor`, or `gsd.reviewer` agents in v1.
 - Keep context-mode usage selective and guardrail-driven rather than adding a broad aggressiveness configuration.
 - Keep GSD Core `resolve_model_ids` omitted/inherited under Pi by default; Pi-native model resolution belongs to `pi-gsd` because Pi can run arbitrary providers and custom model IDs.
+- Treat `/gsd-model` as an explicit session-level action: report Pi's effective thinking level after capability clamping, and leave model/thinking unchanged when a prompt fallback is cancelled or unavailable.
+- Detect and warn about the upstream Pi plugin's `/gsd` / `gsd_invoke` surfaces rather than loading or proxying them.
 
 ## Adding new behavior
 

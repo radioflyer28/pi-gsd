@@ -41,7 +41,7 @@ Examples:
 
 The command list is loaded from the package-local `@opengsd/gsd-core/commands/gsd/*.md` files. The Pi command name is the GSD Core command name with `gsd:` converted to `gsd-`, so `gsd:plan-phase` becomes `/gsd-plan-phase`.
 
-When invoked, pi-gsd sends the upstream command prompt to the current Pi agent turn with the provided arguments substituted. pi-gsd does not maintain its own fork of GSD skills or workflow text.
+When invoked, pi-gsd sends the upstream command prompt to the current Pi agent turn with the provided arguments substituted. Every expanded prompt instructs the agent to run upstream CLI operations through `gsd({ action: "run", args: [...] })` or `/gsd-run`, never a global/bare `gsd-tools` binary. pi-gsd does not maintain its own fork of GSD skills or workflow text.
 
 ### `/gsd-status`
 
@@ -53,6 +53,7 @@ Use it when:
 - checking whether `.planning/` exists
 - confirming whether `context-mode` or `pi-subagents` is loaded
 - verifying that package-local `gsd-tools` is detected
+- checking command-discovery warnings, integration provenance, upstream-plugin coexistence, or opt-in diagnostic-log status
 
 Modes:
 
@@ -70,7 +71,8 @@ Shows setup diagnostics and integration guidance.
 Use it when:
 
 - an optional integration is missing
-- `gsd-tools` is not detected
+- `gsd-tools` is not detected or cannot launch
+- an upstream `/gsd` / `gsd_invoke` surface may overlap with pi-gsd
 - the agent seems to be using the wrong state directory
 - you want a reminder of the adapter boundaries
 
@@ -101,13 +103,13 @@ Examples:
 /gsd-model command gsd:execute-phase
 ```
 
-If the route inherits or omits the model, the current Pi model is left unchanged. Thinking level is applied when the route resolves to a concrete Pi thinking level.
+If the route inherits or omits the model, the current Pi model is left unchanged. Thinking level is applied when the route resolves to a concrete Pi thinking level; pi-gsd reports Pi's effective level after model-capability clamping. A cancelled or unavailable prompt fallback leaves both model and thinking unchanged.
 
 ### `/gsd-init-config`
 
 Creates `.pi-gsd/config.json` and `.pi-gsd/model-routing.json` with pi-gsd defaults. Existing files are left unchanged.
 
-Use this when you want an editable, project-local starting point for integration masks or model routing.
+Use this when you want an editable, project-local starting point for integration masks, model routing, or opt-in private diagnostics (`diagnostics.sessionLog: "on"`).
 
 ## Agent tool usage
 

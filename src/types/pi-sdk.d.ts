@@ -2,7 +2,9 @@ declare module "@earendil-works/pi-coding-agent" {
   export type ExtensionAPI = {
     registerTool?: (tool: Record<string, unknown>) => void;
     registerCommand?: (name: string, command: Record<string, unknown>) => void;
+    getActiveTools?: () => string[];
     getAllTools?: () => Array<{ name?: string }>;
+    getCommands?: () => Array<{ name?: string }>;
     getThinkingLevel?: () => "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
     setThinkingLevel?: (level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh") => void;
     setModel?: (model: unknown) => Promise<boolean>;
@@ -10,7 +12,7 @@ declare module "@earendil-works/pi-coding-agent" {
     exec?: (
       command: string,
       args?: string[],
-      options?: { cwd?: string; signal?: AbortSignal },
+      options?: { cwd?: string; signal?: AbortSignal; timeout?: number },
     ) => Promise<{ stdout?: string; stderr?: string; exitCode?: number } | string>;
   };
 

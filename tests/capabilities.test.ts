@@ -147,6 +147,45 @@ test("capability detection trusts active Pi tool inventory over filesystem probe
   assert.equal(caps.paths.contextMode, "<active-tool:ctx_execute>");
 });
 
+test("active Pi inventory does not revive disabled integrations from stale filesystem paths", () => {
+  const caps = detectCapabilities({
+    cwd: path.resolve("repo"),
+    homeDir: path.resolve("home"),
+    packageRoot: path.resolve("pkg"),
+    exists: (candidate) => candidate === "subagent" || candidate === "context-mode",
+    activeToolNames: [],
+    activeToolInventoryAvailable: true,
+    candidatePaths: { gsdCore: [], gsdTools: [], subagents: ["subagent"], contextMode: ["context-mode"] },
+  });
+
+  assert.equal(caps.mode, "inline");
+  assert.equal(caps.paths.subagents, null);
+  assert.equal(caps.paths.contextMode, null);
+  assert.equal(caps.provenance.subagents, "not-detected");
+  assert.equal(caps.provenance.contextMode, "not-detected");
+});
+
+test("capability detection reports the upstream Pi plugin from active surfaces and plugin paths", () => {
+  const cwd = path.resolve("repo");
+  const homeDir = path.resolve("home");
+  const pluginPath = path.join(homeDir, ".pi", "agent", "extensions", "gsd.cjs");
+  const caps = detectCapabilities({
+    cwd,
+    homeDir,
+    packageRoot: path.resolve("pkg"),
+    exists: (candidate) => candidate === pluginPath,
+    activeToolNames: ["gsd_invoke"],
+    activeToolInventoryAvailable: true,
+    activeCommandNames: ["gsd"],
+    activeCommandInventoryAvailable: true,
+    candidatePaths: { gsdCore: [], gsdTools: [], subagents: [], contextMode: [] },
+  });
+
+  assert.equal(caps.upstreamPiPlugin.activeTool, true);
+  assert.equal(caps.upstreamPiPlugin.activeCommand, true);
+  assert.deepEqual(caps.upstreamPiPlugin.paths, [pluginPath]);
+});
+
 test("capability detection masks optional integrations disabled by .pi-gsd/config.json", () => {
   const cwd = mkdtempSync(path.join(tmpdir(), "pi-gsd-config-"));
   mkdirSync(path.join(cwd, ".pi-gsd"));

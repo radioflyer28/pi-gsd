@@ -14,6 +14,10 @@ const requiredCommands = [
   "gsd-map-codebase",
   "gsd-execute-phase",
   "gsd-verify-work",
+  "gsd-next",
+  "gsd-onboard",
+  "gsd-mempalace-capture",
+  "gsd-mempalace-recall",
 ];
 
 function fail(message, details = "") {
@@ -86,10 +90,10 @@ function checkCommands(commands) {
     fail(`expected broad upstream GSD command exposure, found only ${gsdCommands.length} gsd-* commands`);
   }
 
-  console.log(
-    `live-pi-rpc-smoke: ok (${commands.length} total commands, ${gsdCommands.length} gsd-* extension commands)`,
-  );
+  return { total: commands.length, gsd: gsdCommands.length };
 }
+
+let commandSummary;
 
 child.stdout.on("data", (chunk) => {
   stdoutBuffer += String(chunk);
@@ -106,16 +110,32 @@ child.stdout.on("data", (chunk) => {
       continue;
     }
 
-    if (message.type !== "response" || message.command !== "get_commands") continue;
-    settled = true;
-    clearTimeout(timeout);
-
-    if (!message.success) {
+    if (message.type === "extension_error") {
       child.kill("SIGTERM");
-      fail("Pi RPC get_commands failed", JSON.stringify(message, null, 2));
+      fail("Pi emitted an extension error", JSON.stringify(message, null, 2));
     }
 
-    checkCommands(message.data?.commands ?? []);
+    if (message.type !== "response") continue;
+    if (message.command === "get_commands") {
+      if (!message.success) {
+        child.kill("SIGTERM");
+        fail("Pi RPC get_commands failed", JSON.stringify(message, null, 2));
+      }
+
+      commandSummary = checkCommands(message.data?.commands ?? []);
+      send({ id: "pi-gsd-live-doctor", type: "prompt", message: "/gsd-doctor" });
+      continue;
+    }
+
+    if (message.id !== "pi-gsd-live-doctor" || message.command !== "prompt") continue;
+    settled = true;
+    clearTimeout(timeout);
+    if (!message.success) {
+      child.kill("SIGTERM");
+      fail("Pi RPC /gsd-doctor handler failed", JSON.stringify(message, null, 2));
+    }
+
+    console.log(`live-pi-rpc-smoke: ok (${commandSummary.total} total commands, ${commandSummary.gsd} gsd-* extension commands; /gsd-doctor handled)`);
     child.kill("SIGTERM");
   }
 });

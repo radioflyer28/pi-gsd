@@ -74,7 +74,7 @@ Expected healthy state for full integration mode:
 
 - Pi lists `pi-gsd` as a project or user package.
 - Optional accelerators, if installed, are listed as Pi packages rather than nested dependencies of `pi-gsd`.
-- `/gsd-status` or `gsd({ action: "status" })` reports package-local GSD Core support.
+- `/gsd-status` or `gsd({ action: "status" })` reports package-local GSD Core support, command-discovery status, integration provenance, native-plugin coexistence, and optional diagnostics state.
 - If context-mode and pi-subagents are loaded and not masked, mode is `delegated-ctx`.
 
 ## Pi harness API compatibility
@@ -148,12 +148,23 @@ When testing a newer GSD Core release, verify:
 
 - the `gsd-tools` binary still exists and can be launched package-locally;
 - the command markdown directory still exists;
-- dynamic command discovery finds the expected command count;
+- dynamic command discovery finds the expected command count and degrades to doctor-visible warnings if a file is unreadable;
 - new commands are exposed without copying prompt files into `pi-gsd`;
+- every expanded dynamic prompt preserves the Pi execution contract (`gsd({ action: "run" })` / `/gsd-run`), even when upstream prose mentions a bare `gsd-tools` binary;
 - removed or renamed commands do not leave stale fixed tests/docs;
 - planning artifact semantics remain upstream-owned.
 
 Do not adapt by copying upstream command prompts. If GSD Core moves its command directory or binary seam, update the discovery/dispatcher seam only.
+
+### v1.7.0 Pi-integration ownership
+
+GSD Core v1.7.0 adds an upstream native Pi extension (`pi/gsd.cjs`) and a host-integration SDK. `pi-gsd` continues to be the authoritative Pi adapter rather than auto-loading that extension:
+
+- `pi-gsd` owns its provider-agnostic model routing, dynamic `/gsd-*` prompt commands, `gsd` tool, context-mode guardrails, and pi-subagents guidance.
+- The upstream plugin adds a separate `/gsd` command, `gsd_invoke` tool, lifecycle listeners, and fixed Anthropic-tier model steering. Loading both creates overlapping GSD surfaces and bypasses pi-gsd's routing policy.
+- Do not deep-import the v1.7 SDK from `gsd-core/bin/lib`: the package has no stable export subpath for it. Reassess only when upstream publishes one and its live Pi event/model behavior is validated.
+
+For this adapter, the compatible v1.7 seams are still the package-local `gsd-tools` binary and flat `commands/gsd/*.md` directory. The release adds `next`, `onboard`, `mempalace-capture`, and `mempalace-recall`; test that dynamic discovery exposes them. Normalize only explicit `~/.claude/gsd-core` references in upstream prompt bodies to the package-local core root, including the `@` and `$HOME` spellings used by v1.7 commands.
 
 ## context-mode compatibility
 
@@ -162,7 +173,7 @@ context-mode is an optional Pi package. `pi-gsd` should detect it and add guardr
 Check:
 
 - whether the Pi package is installed and loaded;
-- whether active tool inventory includes `ctx_*` tools;
+- whether active tool inventory includes `ctx_*` tools; when that inventory exists, do not treat stale package files as proof of availability;
 - whether filesystem fallback paths still match Pi's package layout;
 - whether new `ctx_*` tools should be allowed, warned, or blocked by the guard.
 
@@ -182,7 +193,7 @@ pi-subagents is an optional Pi package. `pi-gsd` should detect it and provide gu
 
 Check:
 
-- whether active tool inventory still exposes `subagent`;
+- whether active tool inventory still exposes `subagent`; when that inventory exists, do not treat stale package files as proof of availability;
 - whether filesystem fallback paths still match Pi's package layout;
 - whether `subagent({ action: "list" })` still works;
 - whether model delegation still accepts an optional `model` field;

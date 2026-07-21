@@ -2,11 +2,15 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 export type IntegrationMode = "auto" | "off";
+export type DiagnosticsMode = "on" | "off";
 
 export type PiGsdConfig = {
   integrations: {
     subagents: IntegrationMode;
     contextMode: IntegrationMode;
+  };
+  diagnostics: {
+    sessionLog: DiagnosticsMode;
   };
 };
 
@@ -14,6 +18,9 @@ export const DEFAULT_PI_GSD_CONFIG: PiGsdConfig = {
   integrations: {
     subagents: "auto",
     contextMode: "auto",
+  },
+  diagnostics: {
+    sessionLog: "off",
   },
 };
 
@@ -25,18 +32,30 @@ function normalizeIntegrationMode(value: unknown): IntegrationMode {
   return value === "off" ? "off" : "auto";
 }
 
+function normalizeDiagnosticsMode(value: unknown): DiagnosticsMode {
+  return value === "on" ? "on" : "off";
+}
+
 function normalizeConfig(value: unknown): PiGsdConfig {
   const integrations = isRecord(value) && isRecord(value.integrations) ? value.integrations : {};
+  const diagnostics = isRecord(value) && isRecord(value.diagnostics) ? value.diagnostics : {};
   return {
     integrations: {
       subagents: normalizeIntegrationMode(integrations.subagents),
       contextMode: normalizeIntegrationMode(integrations.contextMode),
+    },
+    diagnostics: {
+      sessionLog: normalizeDiagnosticsMode(diagnostics.sessionLog),
     },
   };
 }
 
 export function getPiGsdConfigPath(cwd: string): string {
   return path.join(cwd, ".pi-gsd", "config.json");
+}
+
+export function getPiGsdDiagnosticsPath(cwd: string): string {
+  return path.join(cwd, ".pi-gsd", "diagnostics.jsonl");
 }
 
 export function loadPiGsdConfig(cwd: string): { config: PiGsdConfig; path: string; warnings: string[] } {
