@@ -2,7 +2,7 @@
 
 `pi-gsd` is a thin [Pi](https://github.com/earendil-works/pi-coding-agent) package that exposes upstream `@opengsd/gsd-core` workflows inside Pi.
 
-It does **not** reimplement GSD. It registers a small Pi tool, slash commands, and guardrails that help Pi use GSD safely while keeping workflow behavior in upstream GSD Core.
+It does **not** reimplement GSD. It registers a small Pi tool, slash commands, and guardrails that help Pi use GSD safely while keeping workflow behavior in upstream GSD Core. The bundled compatibility baseline is GSD Core v1.9.1.
 
 ## Why?
 - I want to use GSD inside Pi.
@@ -119,7 +119,7 @@ Use `/gsd-model agent gsd-planner` to explicitly switch the current Pi model/thi
 /gsd-run roadmap --json
 ```
 
-The `run` action dispatches to the package-local `gsd-tools` binary. It uses Pi's `pi.exec` when available and falls back to Node child-process spawning for the package-local binary when `pi.exec` is unavailable. Dynamic `/gsd-*` prompts include the same execution contract: translate every upstream CLI operation into `gsd({ action: "run", args: [...] })` or `/gsd-run`, never a global `gsd-tools` binary.
+The `run` action dispatches to the package-local `gsd-tools` binary. It uses Pi's `pi.exec` when available and falls back to Node child-process spawning for the package-local binary when `pi.exec` is unavailable. Dynamic `/gsd-*` prompts include the same execution contract: translate every upstream `gsd-tools`, `gsd_run`, or direct `node .../gsd-tools.cjs` operation into `gsd({ action: "run", args: [...] })` or `/gsd-run`, never execute an upstream runtime-home/global launch shim directly.
 
 Quoted arguments are supported:
 
@@ -181,7 +181,7 @@ Before delegating GSD-specific work, agents should call `gsd({ action: "resolve-
 
 ### Upstream Pi plugin coexistence
 
-GSD Core v1.7.0 also ships an installable native Pi plugin (`pi/gsd.cjs`). `pi-gsd` intentionally does not load it: the upstream plugin exposes a separate `/gsd` command, `gsd_invoke` tool, lifecycle listeners, and fixed Anthropic-tier model steering. Use either integration, not both; `pi-gsd` remains the provider-agnostic adapter with dynamic `/gsd-*` commands and Pi-native model routing. `/gsd-doctor` warns when it sees an active `/gsd` or `gsd_invoke` surface, or a likely upstream plugin file.
+GSD Core v1.9.1 ships an installable native Pi plugin from `pi/gsd.cjs`; its installer writes the active extension as `~/.pi/agent/extensions/gsd.js` (older installs may leave `gsd.cjs`). `pi-gsd` intentionally does not load it: the upstream plugin exposes a separate `/gsd` command, `gsd_invoke` tool, lifecycle listeners, and independent model-routing behavior. Use either integration, not both; `pi-gsd` remains the provider-agnostic adapter with dynamic `/gsd-*` commands and Pi-native model routing. `/gsd-doctor` warns when it sees an active `/gsd` or `gsd_invoke` surface, or either current or legacy upstream plugin file.
 
 ## State boundary
 

@@ -144,8 +144,8 @@ function piExecutionGuidance(): string[] {
     "",
     "## Pi execution contract",
     "",
-    "- Run every upstream `gsd-tools` operation through pi-gsd: `gsd({ action: \"run\", args: [...] })` or `/gsd-run <args>`.",
-    "- Never use bare `gsd-tools`, `command -v gsd-tools`, a global GSD install, or runtime-home launch paths. Translate an upstream CLI example to its argument array while preserving its GSD semantics.",
+    "- Run every upstream GSD CLI operation (`gsd-tools`, `gsd_run`, or direct `node .../gsd-tools.cjs`) through pi-gsd: `gsd({ action: \"run\", args: [...] })` or `/gsd-run <args>`.",
+    "- Never execute a bare `gsd-tools`/`gsd_run`, `command -v gsd-tools`, a global GSD install, a direct `node .../gsd-tools.cjs` command, or a runtime-home launch shim. Translate the upstream CLI example to its argument array while preserving its GSD semantics.",
     "- Use Pi chat/UI for upstream interactive prompts and call pi-subagents directly only when the parent agent independently chooses delegation.",
   ];
 }

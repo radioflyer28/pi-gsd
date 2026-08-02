@@ -165,15 +165,17 @@ test("active Pi inventory does not revive disabled integrations from stale files
   assert.equal(caps.provenance.contextMode, "not-detected");
 });
 
-test("capability detection reports the upstream Pi plugin from active surfaces and plugin paths", () => {
+test("capability detection reports the upstream Pi plugin from active surfaces and current or legacy plugin paths", () => {
   const cwd = path.resolve("repo");
   const homeDir = path.resolve("home");
-  const pluginPath = path.join(homeDir, ".pi", "agent", "extensions", "gsd.cjs");
+  const currentPluginPath = path.join(homeDir, ".pi", "agent", "extensions", "gsd.js");
+  const legacyPluginPath = path.join(cwd, ".pi", "extensions", "gsd.cjs");
+  const pluginPaths = new Set([currentPluginPath, legacyPluginPath]);
   const caps = detectCapabilities({
     cwd,
     homeDir,
     packageRoot: path.resolve("pkg"),
-    exists: (candidate) => candidate === pluginPath,
+    exists: (candidate) => pluginPaths.has(candidate),
     activeToolNames: ["gsd_invoke"],
     activeToolInventoryAvailable: true,
     activeCommandNames: ["gsd"],
@@ -183,7 +185,7 @@ test("capability detection reports the upstream Pi plugin from active surfaces a
 
   assert.equal(caps.upstreamPiPlugin.activeTool, true);
   assert.equal(caps.upstreamPiPlugin.activeCommand, true);
-  assert.deepEqual(caps.upstreamPiPlugin.paths, [pluginPath]);
+  assert.deepEqual(caps.upstreamPiPlugin.paths, [legacyPluginPath, currentPluginPath]);
 });
 
 test("capability detection masks optional integrations disabled by .pi-gsd/config.json", () => {

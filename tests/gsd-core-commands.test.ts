@@ -25,15 +25,17 @@ test("discovers multiple upstream command markdown files from a flat command dir
   assert.equal(commands[1].coreName, "gsd:verify-work");
 });
 
-test("bundled v1.7 GSD Core commands are exposed through dynamic discovery", () => {
-  const slashNames = new Set(discoverGsdCoreCommands().map((command) => command.slashName));
+test("bundled v1.9.1 GSD Core commands are exposed through dynamic discovery", () => {
+  const commands = discoverGsdCoreCommands();
+  const slashNames = new Set(commands.map((command) => command.slashName));
 
+  assert.equal(commands.length, 71);
   for (const slashName of ["gsd-next", "gsd-onboard", "gsd-mempalace-capture", "gsd-mempalace-recall"]) {
     assert.ok(slashNames.has(slashName), `expected ${slashName} from package-local gsd-core`);
   }
 });
 
-test("bundled v1.7 gsd-next resolves its workflow inside the package-local core", () => {
+test("bundled v1.9.1 gsd-next resolves its workflow inside the package-local core", () => {
   const command = discoverGsdCoreCommands().find(({ slashName }) => slashName === "gsd-next");
   assert.ok(command, "expected package-local gsd-next command");
 
@@ -106,7 +108,7 @@ test("config command prompt expansion injects Pi config update requirements", ()
       coreName: "gsd:config",
       description: "Config",
       path: commandPath,
-      body: "Run gsd-tools query config-set foo bar",
+      body: "Run gsd_run query config-set foo bar or node <runtime-home>/gsd-core/bin/gsd-tools.cjs query config-set foo bar",
     },
     "--advanced",
   );
@@ -115,7 +117,9 @@ test("config command prompt expansion injects Pi config update requirements", ()
   assert.match(prompt, /\.planning\/config\.json/);
   assert.match(prompt, /## Pi execution contract/);
   assert.match(prompt, /gsd\(\{ action: "run", args: \[\.\.\.\] \}\)/);
-  assert.match(prompt, /Never use bare `gsd-tools`, `command -v gsd-tools`/);
+  assert.match(prompt, /GSD CLI operation \(`gsd-tools`, `gsd_run`, or direct `node \.\.\.\/gsd-tools\.cjs`\)/);
+  assert.match(prompt, /Never execute a bare `gsd-tools`\/`gsd_run`/);
+  assert.match(prompt, /direct `node \.\.\.\/gsd-tools\.cjs` command/);
 });
 
 test("command prompt expansion preserves quoted arguments and rewrites package-local GSD Core references", () => {
@@ -147,7 +151,7 @@ test("command prompt expansion preserves quoted arguments and rewrites package-l
   );
 
   assert.match(prompt, /## Pi execution contract/);
-  assert.match(prompt, /Run every upstream `gsd-tools` operation through pi-gsd/);
+  assert.match(prompt, /Run every upstream GSD CLI operation/);
   assert.match(prompt, /All: 1 "two words"/);
   assert.match(prompt, /First: 1/);
   assert.match(prompt, /Second: two words/);
@@ -158,7 +162,7 @@ test("command prompt expansion preserves quoted arguments and rewrites package-l
   assert.match(prompt, /@.*node_modules.*@opengsd.*gsd-core.*gsd-core.*workflows.*plan-review\.md/);
 });
 
-test("command discovery keeps v1.7 frontmatter metadata out of the Pi command surface", () => {
+test("command discovery keeps unsupported upstream frontmatter metadata out of the Pi command surface", () => {
   const commandsDir = path.join("pkg", "node_modules", "@opengsd", "gsd-core", "commands", "gsd");
   const filePath = path.join(commandsDir, "next.md");
 

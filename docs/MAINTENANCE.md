@@ -150,21 +150,22 @@ When testing a newer GSD Core release, verify:
 - the command markdown directory still exists;
 - dynamic command discovery finds the expected command count and degrades to doctor-visible warnings if a file is unreadable;
 - new commands are exposed without copying prompt files into `pi-gsd`;
-- every expanded dynamic prompt preserves the Pi execution contract (`gsd({ action: "run" })` / `/gsd-run`), even when upstream prose mentions a bare `gsd-tools` binary;
+- every expanded dynamic prompt preserves the Pi execution contract (`gsd({ action: "run" })` / `/gsd-run`), even when upstream prose mentions `gsd-tools`, `gsd_run`, a direct `node .../gsd-tools.cjs` command, or a runtime-home launch shim;
 - removed or renamed commands do not leave stale fixed tests/docs;
 - planning artifact semantics remain upstream-owned.
 
 Do not adapt by copying upstream command prompts. If GSD Core moves its command directory or binary seam, update the discovery/dispatcher seam only.
 
-### v1.7.0 Pi-integration ownership
+### v1.9.1 Pi-integration ownership
 
-GSD Core v1.7.0 adds an upstream native Pi extension (`pi/gsd.cjs`) and a host-integration SDK. `pi-gsd` continues to be the authoritative Pi adapter rather than auto-loading that extension:
+GSD Core introduced its native Pi extension in v1.7 and makes Pi a first-class installable runtime by v1.9.1. `pi-gsd` continues to be the authoritative Pi adapter rather than auto-loading that extension:
 
 - `pi-gsd` owns its provider-agnostic model routing, dynamic `/gsd-*` prompt commands, `gsd` tool, context-mode guardrails, and pi-subagents guidance.
-- The upstream plugin adds a separate `/gsd` command, `gsd_invoke` tool, lifecycle listeners, and fixed Anthropic-tier model steering. Loading both creates overlapping GSD surfaces and bypasses pi-gsd's routing policy.
-- Do not deep-import the v1.7 SDK from `gsd-core/bin/lib`: the package has no stable export subpath for it. Reassess only when upstream publishes one and its live Pi event/model behavior is validated.
+- The upstream plugin adds a separate `/gsd` command, `gsd_invoke` tool, lifecycle listeners, and its own model-steering policy. Loading both creates overlapping GSD surfaces and bypasses pi-gsd's routing policy.
+- The packaged plugin source remains `pi/gsd.cjs`, but the v1.9.1 installer writes `extensions/gsd.js`, the suffix Pi discovers. Coexistence detection must recognize `gsd.js` and the legacy `gsd.cjs` path.
+- GSD Core now labels `gsd-core/bin/lib/host-integration-sdk.cjs` as a public, protocol-versioned SDK surface. It still has no package `exports` map or complete in-process command-routing hub, and the upstream Pi plugin itself uses subprocess dispatch. Keep pi-gsd on the package-local binary seam unless a future exported API provides a clear advantage and passes live Pi validation.
 
-For this adapter, the compatible v1.7 seams are still the package-local `gsd-tools` binary and flat `commands/gsd/*.md` directory. The release adds `next`, `onboard`, `mempalace-capture`, and `mempalace-recall`; test that dynamic discovery exposes them. Normalize only explicit `~/.claude/gsd-core` references in upstream prompt bodies to the package-local core root, including the `@` and `$HOME` spellings used by v1.7 commands.
+For this adapter, the verified v1.9.1 seams remain the package-local `gsd-tools` binary and flat `commands/gsd/*.md` directory (71 command files). Dynamic discovery exposes the full set without copied prompts. Normalize explicit `~/.claude/gsd-core` references in upstream prompt bodies to the package-local core root, including the `@` and `$HOME` spellings. Because current prompts also contain `gsd_run`, direct Node invocations, and multi-runtime launch shims, the injected Pi execution contract must tell the agent to translate all of those forms to the `gsd` tool or `/gsd-run`.
 
 ## context-mode compatibility
 

@@ -41,7 +41,7 @@ Examples:
 
 The command list is loaded from the package-local `@opengsd/gsd-core/commands/gsd/*.md` files. The Pi command name is the GSD Core command name with `gsd:` converted to `gsd-`, so `gsd:plan-phase` becomes `/gsd-plan-phase`.
 
-When invoked, pi-gsd sends the upstream command prompt to the current Pi agent turn with the provided arguments substituted. Every expanded prompt instructs the agent to run upstream CLI operations through `gsd({ action: "run", args: [...] })` or `/gsd-run`, never a global/bare `gsd-tools` binary. pi-gsd does not maintain its own fork of GSD skills or workflow text.
+When invoked, pi-gsd sends the upstream command prompt to the current Pi agent turn with the provided arguments substituted. Every expanded prompt instructs the agent to translate upstream `gsd-tools`, `gsd_run`, direct `node .../gsd-tools.cjs`, and runtime-home launch-shim operations to `gsd({ action: "run", args: [...] })` or `/gsd-run`. pi-gsd does not maintain its own fork of GSD skills or workflow text.
 
 ### `/gsd-status`
 

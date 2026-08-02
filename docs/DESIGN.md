@@ -56,7 +56,7 @@ All GSD execution goes through a small dispatcher abstraction with these operati
 - `resolveModel`
 - `initConfig`
 
-The current dispatcher uses package-local `gsd-tools` as the execution seam. It prefers Pi's `pi.exec` when available and falls back to Node child-process spawning for the package-local binary when `pi.exec` is unavailable. Every dynamic upstream command prompt receives the same execution contract: translate CLI calls to `gsd({ action: "run", args: [...] })` or `/gsd-run`; never use a bare/global `gsd-tools` executable.
+The current dispatcher uses package-local `gsd-tools` as the execution seam. It prefers Pi's `pi.exec` when available and falls back to Node child-process spawning for the package-local binary when `pi.exec` is unavailable. Every dynamic upstream command prompt receives the same execution contract: translate upstream `gsd-tools`, `gsd_run`, direct `node .../gsd-tools.cjs`, and runtime-home launch-shim calls to `gsd({ action: "run", args: [...] })` or `/gsd-run`; never execute those alternate launch paths directly.
 
 The dispatcher must not fall back to a system-wide `gsd-tools` binary. A system-wide binary may be a different GSD version from the package-local dependency and could produce incompatible behavior or artifacts. Status inspects package metadata and command discovery; doctor additionally runs a bounded package-local `gsd-tools --help` probe and reports failures instead of claiming a healthy installation from a path alone.
 

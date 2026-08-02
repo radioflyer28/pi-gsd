@@ -90,7 +90,9 @@ function packageLocalGsdToolsCandidates(packageRoot: string): string[] {
 
 function upstreamPiPluginCandidates(homeDir: string, cwd: string): string[] {
   return [
+    path.join(cwd, ".pi", "extensions", "gsd.js"),
     path.join(cwd, ".pi", "extensions", "gsd.cjs"),
+    path.join(homeDir, ".pi", "agent", "extensions", "gsd.js"),
     path.join(homeDir, ".pi", "agent", "extensions", "gsd.cjs"),
   ];
 }
