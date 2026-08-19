@@ -143,7 +143,7 @@ The `cwd` parameter can be provided when the command should run against a differ
 
 Other accepted selectors are `skill`, `command`, or a generic `target`.
 
-The result includes a Pi-native resolved model, thinking level, warnings, and a `subagent` block. When `subagent.model` is present, pass it to the `subagent` tool. When absent, omit `model` so pi-subagents inherits/defaults naturally.
+The result includes a Pi-native resolved model, thinking level, warnings, and a `subagent` block. When `subagent.model` is present, pass it exactly to the `subagent` tool. Its model suffix carries the routed thinking level so pi-subagents both applies and displays it. When absent, omit `model`; if thinking must still be pinned, configure pi-subagents `defaultThinking` or an agent override.
 
 ### Init config
 
@@ -276,7 +276,7 @@ Before delegating GSD-specific work, resolve routing through the shared resolver
 { "action": "resolve-model", "agent": "gsd-planner" }
 ```
 
-Then consume the returned `subagent` block. Pass `subagent.model` only when present; otherwise omit `model` and let pi-subagents inherit/default.
+Then consume the returned `subagent` block. Pass `subagent.model` exactly when present; otherwise omit `model` as instructed. Resolve each distinct upstream GSD agent role rather than routing only the enclosing skill. Default pi-gsd routes snapshot the parent model with a tier-specific thinking suffix; configure explicit tier or agent models in `.pi-gsd/model-routing.json` when children should use different models.
 
 ## State and artifact rules
 

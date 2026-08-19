@@ -163,6 +163,7 @@ When `diagnostics.sessionLog` is explicitly enabled, `.pi-gsd/diagnostics.jsonl`
 - Do not ship packaged `gsd.planner`, `gsd.executor`, or `gsd.reviewer` agents in v1.
 - Keep context-mode usage selective and guardrail-driven rather than adding a broad aggressiveness configuration.
 - Keep GSD Core `resolve_model_ids` omitted/inherited under Pi by default; Pi-native model resolution belongs to `pi-gsd` because Pi can run arbitrary providers and custom model IDs.
+- For the pi-subagents consumer block, snapshot an inherited Pi model and append the routed thinking suffix. pi-subagents' public per-run surface applies and displays thinking through that model suffix; a separate advisory thinking value is not enough.
 - Treat `/gsd-model` as an explicit session-level action: report Pi's effective thinking level after capability clamping, and leave model/thinking unchanged when a prompt fallback is cancelled or unavailable.
 - Detect and warn about the upstream Pi plugin's `/gsd` / `gsd_invoke` surfaces rather than loading or proxying them.
 

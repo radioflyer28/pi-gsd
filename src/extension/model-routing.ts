@@ -375,12 +375,15 @@ export function resolveModelRouting(
   }
 
   const thinking = requestedThinking === "inherit" ? inheritedThinking : requestedThinking;
+  const routedSubagentModel = mode !== "omit-model" && model
+    ? `${model}${thinking !== "inherit" ? `:${thinking}` : ""}`
+    : undefined;
   const subagent: ResolvedModelRouting["subagent"] = {
-    note: mode === "use-explicit"
-      ? "Pass `model` to the pi-subagents tool when delegating this target. Thinking is advisory unless the selected subagent/runtime exposes a thinking control."
-      : "Omit `model` when delegating so pi-subagents inherits/defaults naturally. Thinking is advisory unless the selected subagent/runtime exposes a thinking control.",
+    note: routedSubagentModel
+      ? "Pass `model` exactly as shown to pi-subagents. Its suffix makes the routed thinking level explicit and visible in subagent status."
+      : "Omit `model` when delegating. pi-subagents cannot apply a per-run thinking level without a model override; use its `defaultThinking` or agent override if thinking must be pinned.",
   };
-  if (mode === "use-explicit" && model) subagent.model = model;
+  if (routedSubagentModel) subagent.model = routedSubagentModel;
   if (thinking !== "inherit") subagent.thinking = thinking;
 
   return {

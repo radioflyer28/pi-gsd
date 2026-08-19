@@ -32,7 +32,27 @@ test("model routing surfaces invalid project config and falls back to defaults",
     assert.equal(resolved.model, "openai/current");
     assert.equal(resolved.thinking, "xhigh");
     assert.equal(resolved.recommendedAction.mode, "inherit-current");
+    assert.equal(resolved.subagent.model, "openai/current:xhigh");
+    assert.equal(resolved.subagent.thinking, "xhigh");
   });
+});
+
+test("model routing makes mapper thinking explicit in the pi-subagents model suffix", () => {
+  const cwd = mkdtempSync(path.join(tmpdir(), "pi-gsd-model-routing-"));
+  try {
+    const resolved = resolveModelRouting(
+      { agent: "gsd-codebase-mapper" },
+      { cwd, model: { provider: "openai-codex", id: "gpt-5.6-sol" }, thinkingLevel: "high" },
+    );
+
+    assert.equal(resolved.tier, "light");
+    assert.equal(resolved.model, "openai-codex/gpt-5.6-sol");
+    assert.equal(resolved.thinking, "medium");
+    assert.equal(resolved.subagent.model, "openai-codex/gpt-5.6-sol:medium");
+    assert.match(resolved.subagent.note, /suffix makes the routed thinking level explicit and visible/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });
 
 test("model routing supports fallback error for unavailable configured models", () => {
@@ -135,6 +155,7 @@ test("model routing lets session override take precedence over configured routes
       assert.equal(resolved.source, "session.gsd-planner");
       assert.equal(resolved.model, "openai/session");
       assert.equal(resolved.recommendedAction.mode, "use-explicit");
+      assert.equal(resolved.subagent.model, "openai/session:high");
     },
   );
 });

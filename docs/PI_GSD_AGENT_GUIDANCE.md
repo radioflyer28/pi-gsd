@@ -10,8 +10,8 @@ When a GSD command is needed:
 
 1. Use the `gsd` tool with `action: "status"` or `action: "doctor"` to inspect the wrapper and GSD project records.
 2. Use `gsd` with `action: "run"` for thin dispatcher-backed calls to the package-local upstream `gsd-tools` installed with `pi-gsd`.
-3. Before choosing a model for GSD-specific work, use `gsd` with `action: "resolve-model"` for the relevant `agent`, `skill`, `command`, or `target`.
-4. If `pi-subagents` is reported as available and the task is large, call `subagent({ action: "list" })` before selecting agents or chains. Consume the shared pi-gsd model-routing result: pass `subagent.model` only when present; otherwise omit model to inherit/default.
+3. Before launching each distinct GSD subagent role, use `gsd` with `action: "resolve-model"` and the exact upstream `agent` name.
+4. If `pi-subagents` is reported as available and the task is large, call `subagent({ action: "list" })` before selecting agents or chains. Consume the shared pi-gsd model-routing result: pass `subagent.model` exactly when present so its suffix applies and displays the routed thinking level; otherwise omit model only as instructed.
 5. If `context-mode` is reported as available, use `ctx_execute`, `ctx_execute_file`, `ctx_search`, or indexing only when it materially reduces noisy context for the current GSD task.
 
 ## Boundaries

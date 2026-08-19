@@ -107,7 +107,7 @@ Pi is provider/runtime agnostic, so `pi-gsd` keeps GSD Core model IDs omitted/in
 { "action": "resolve-model", "agent": "gsd-planner" }
 ```
 
-Optional project-local routing lives in `.pi-gsd/model-routing.json`. If no route is configured, `pi-gsd` inherits the current Pi model and applies tier-based thinking defaults.
+Optional project-local routing lives in `.pi-gsd/model-routing.json`. If no route is configured, `pi-gsd` inherits the current Pi model and applies tier-based thinking defaults. For pi-subagents, the consumer block snapshots that inherited model and appends the thinking suffix (for example, `openai-codex/gpt-5.6-sol:medium`) because pi-subagents cannot apply or display a per-run thinking level separately from a model override.
 
 Use `/gsd-model agent gsd-planner` to explicitly switch the current Pi model/thinking level when the route resolves to an available configured model. Set `fallback: "prompt"` to ask the user to choose an available Pi model when a configured route is unavailable; chosen fallback models are remembered per target for the current Pi extension session.
 
@@ -177,7 +177,7 @@ When `pi-subagents` is loaded, `pi-gsd` reports it and instructs agents to call 
 
 The `gsd` tool does not call subagents internally. Large planning, execution, review, and verification work should use `pi-subagents` directly from the parent agent when appropriate.
 
-Before delegating GSD-specific work, agents should call `gsd({ action: "resolve-model", agent: "gsd-planner" })` and consume the returned `subagent` block. Pass `subagent.model` only when present; otherwise omit `model` so pi-subagents inherits/defaults naturally.
+Before delegating each distinct GSD subagent role, agents should call `gsd({ action: "resolve-model", agent: "<exact-gsd-agent-name>" })` and consume the returned `subagent` block. Pass `subagent.model` exactly when present; its suffix carries the routed thinking level and makes it visible in pi-subagents status. Omit `model` only when the consumer block says to omit it. Default routes still use the current parent model; configure `.pi-gsd/model-routing.json` with explicit tier or agent models when child roles should use different models.
 
 ### Upstream Pi plugin coexistence
 

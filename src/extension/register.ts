@@ -449,7 +449,7 @@ export function registerPiGsdCore(pi: RegisterablePiApi, options: RegisterPiGsdO
       "Use context-mode `ctx_*` tools only for bulky or transient context when available.",
       "Use `gsd` action `init-config` only when the user wants editable project-local pi-gsd defaults.",
       "Use `gsd` action `resolve-model` to resolve Pi-native model/thinking guidance for GSD agents, skills, or commands.",
-      "When pi-subagents is available, consume the shared pi-gsd model-routing result and pass its explicit `subagent.model` only when present; otherwise omit model to inherit/default.",
+      "Before launching each distinct GSD subagent role, call `gsd` action `resolve-model` for its exact agent name. When pi-subagents is available, pass `subagent.model` exactly when present; its suffix carries the routed thinking level and makes it visible in subagent status. Omit model only when the consumer block says to omit it.",
       "Use pi-subagents directly for large planning/execution/review when available; do not expect the `gsd` tool to orchestrate subagents internally.",
     ],
     parameters: options.parameters,

@@ -122,6 +122,9 @@ test("config command prompt expansion injects Pi config update requirements", ()
   assert.match(prompt, /GSD CLI operation \(`gsd-tools`, `gsd_run`, or direct `node \.\.\.\/gsd-tools\.cjs`\)/);
   assert.match(prompt, /Never execute a bare `gsd-tools`\/`gsd_run`/);
   assert.match(prompt, /direct `node \.\.\.\/gsd-tools\.cjs` command/);
+  assert.match(prompt, /Before launching each distinct upstream GSD subagent role/);
+  assert.match(prompt, /resolve-model.*exact-gsd-agent-name/);
+  assert.match(prompt, /suffix carries the routed thinking level/);
 });
 
 test("command prompt expansion uses Pi's collapsible skill-block envelope", () => {
