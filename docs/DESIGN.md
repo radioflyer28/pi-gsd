@@ -22,7 +22,7 @@ If GSD Core needs a better programmatic dispatcher, that seam should be added up
 
 ## Pi-facing surface
 
-`pi-gsd` exposes one tool and five fixed integration commands plus dynamic upstream GSD Core commands.
+`pi-gsd` exposes one tool and six fixed integration commands plus dynamic upstream GSD Core commands.
 
 Tool:
 
@@ -34,6 +34,7 @@ Commands:
 - `/gsd-doctor`
 - `/gsd-run <args>`
 - `/gsd-model [agent|skill|command] <target>`
+- `/gsd-model-config <heavy|standard|light>`
 - `/gsd-init-config`
 
 The tool supports five actions:
@@ -133,7 +134,7 @@ The guard should stay conservative. It should block only high-risk accidental be
 
 Use `pi-subagents` for fresh-context and parallel work. The parent agent should call `subagent({ action: "list" })` before selecting agents or chains.
 
-`pi-gsd` does not call `subagent` internally. Large GSD planning, execution, review, and verification can use `pi-subagents` directly from the parent model when status or doctor output reports it as available.
+`pi-gsd` does not call `subagent` internally. Large GSD planning, execution, review, and verification can use `pi-subagents` directly from the parent model when status or doctor output reports it as available. A cwd-scoped, warn-only `tool_call` validator compares the next launch with freshly resolved consumer guidance, consumes that pending contract, and fails open; it never mutates, blocks, or launches children.
 
 In combined mode, the preferred pattern is:
 
@@ -151,7 +152,7 @@ Do not create `.gsd/` for `pi-gsd` state. That name can collide with other GSD-f
 
 `pi-gsd` may use `.pi-gsd/` for wrapper-private project metadata. `.pi-gsd/config.json` stores pi-gsd integration settings and opt-in diagnostics settings; `.pi-gsd/model-routing.json` maps GSD agents/skills/commands to Pi-native model IDs, thinking levels, and fallback policy. These files are intentionally not GSD Core artifacts and should not be stored in `.planning/`.
 
-When `diagnostics.sessionLog` is explicitly enabled, `.pi-gsd/diagnostics.jsonl` stores a capped, argument-free local outcome trail for support. It is best-effort and must never control GSD workflow state. Model routing supports an opt-in `prompt` fallback. Prompt answers are remembered in memory per target for the current Pi extension session only; they are not written to `.planning/` or `.pi-gsd/` unless the user edits config explicitly.
+When `diagnostics.sessionLog` is explicitly enabled, `.pi-gsd/diagnostics.jsonl` stores a capped, argument-free local outcome trail for support. It is best-effort and must never control GSD workflow state. `safety.upstreamGuards` is an independent opt-in that adapts only package-local upstream write-shrink and GSD-worktree path block decisions; all adapter failures allow execution. Claude marketplace canonical paths, Claude statusline context monitoring, provider-payload steering, advisory envelopes, and inert official hook placeholders are deliberately not bridged. Model routing supports an opt-in `prompt` fallback. Prompt answers are remembered in memory per target for the current Pi extension session only; they are not written to `.planning/` or `.pi-gsd/` unless the user edits config explicitly.
 
 ## V1 decisions
 
@@ -163,8 +164,10 @@ When `diagnostics.sessionLog` is explicitly enabled, `.pi-gsd/diagnostics.jsonl`
 - Do not ship packaged `gsd.planner`, `gsd.executor`, or `gsd.reviewer` agents in v1.
 - Keep context-mode usage selective and guardrail-driven rather than adding a broad aggressiveness configuration.
 - Keep GSD Core `resolve_model_ids` omitted/inherited under Pi by default; Pi-native model resolution belongs to `pi-gsd` because Pi can run arbitrary providers and custom model IDs.
-- For the pi-subagents consumer block, snapshot an inherited Pi model and append the routed thinking suffix. pi-subagents' public per-run surface applies and displays thinking through that model suffix; a separate advisory thinking value is not enough.
+- For the pi-subagents consumer block, snapshot an inherited Pi model and append the routed thinking suffix. pi-subagents' public per-run surface applies and displays thinking through that model suffix; do not expose a nonexistent standalone child thinking argument.
+- Treat error/prompt child guidance as `resolve-first`; absence of a child model alone never implies that delegation should proceed.
 - Treat `/gsd-model` as an explicit session-level action: report Pi's effective thinking level after capability clamping, and leave model/thinking unchanged when a prompt fallback is cancelled or unavailable.
+- Treat `/gsd-model-config` as the interactive, provider-neutral writer for wrapper-private tier routes.
 - Detect and warn about the upstream Pi plugin's `/gsd` / `gsd_invoke` surfaces rather than loading or proxying them.
 
 ## Adding new behavior

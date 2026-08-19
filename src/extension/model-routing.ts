@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-export type ThinkingLevel = "inherit" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+export type ThinkingLevel = "inherit" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 export type ModelFallback = "inherit" | "omit" | "error" | "prompt";
 export type RoutingTier = "heavy" | "standard" | "light";
 export type RoutingTargetType = "agent" | "skill" | "command";
@@ -64,7 +64,7 @@ export type ResolvedModelRouting = {
   error?: string;
   subagent: {
     model?: string;
-    thinking?: Exclude<ThinkingLevel, "inherit">;
+    action: "pass-model" | "omit-model" | "resolve-first";
     note: string;
   };
   recommendedAction: {
@@ -157,7 +157,7 @@ function normalizeFallback(value: unknown): ModelFallback | undefined {
 }
 
 function normalizeThinking(value: unknown): ThinkingLevel | undefined {
-  return value === "inherit" || value === "off" || value === "minimal" || value === "low" || value === "medium" || value === "high" || value === "xhigh"
+  return value === "inherit" || value === "off" || value === "minimal" || value === "low" || value === "medium" || value === "high" || value === "xhigh" || value === "max"
     ? value
     : undefined;
 }
@@ -166,11 +166,18 @@ function normalizeTier(value: unknown): RoutingTier | undefined {
   return value === "heavy" || value === "standard" || value === "light" ? value : undefined;
 }
 
+function splitModelThinkingSuffix(model: string): { model: string; thinking?: Exclude<ThinkingLevel, "inherit"> } {
+  const match = model.match(/^(.*):(off|minimal|low|medium|high|xhigh|max)$/);
+  if (!match?.[1]) return { model };
+  return { model: match[1], thinking: match[2] as Exclude<ThinkingLevel, "inherit"> };
+}
+
 function normalizeRoute(value: unknown): ModelRoute {
   if (!isRecord(value)) return {};
   const route: ModelRoute = {};
-  if (typeof value.model === "string") route.model = value.model;
-  const thinking = normalizeThinking(value.thinking);
+  const suffixed = typeof value.model === "string" ? splitModelThinkingSuffix(value.model) : undefined;
+  if (suffixed) route.model = suffixed.model;
+  const thinking = normalizeThinking(value.thinking) ?? suffixed?.thinking;
   if (thinking) route.thinking = thinking;
   const tier = normalizeTier(value.tier);
   if (tier) route.tier = tier;
@@ -244,17 +251,46 @@ export function loadModelRoutingConfig(cwd: string): { config: ModelRoutingConfi
   return { config, path: configPath, warnings };
 }
 
+export function writeModelTierRoute(
+  cwd: string,
+  tier: RoutingTier,
+  route: ModelRoute,
+): string {
+  const configPath = getModelRoutingConfigPath(cwd);
+  let raw: Record<string, unknown> = {};
+  try {
+    if (fs.existsSync(configPath)) {
+      const parsed = JSON.parse(fs.readFileSync(configPath, "utf8"));
+      if (!isRecord(parsed)) throw new Error("configuration root must be a JSON object");
+      raw = parsed;
+    }
+  } catch (error) {
+    throw new Error(`Cannot update ${configPath}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  const tiers = isRecord(raw.tiers) ? { ...raw.tiers } : {};
+  const existingRoute = isRecord(tiers[tier]) ? tiers[tier] : {};
+  tiers[tier] = { ...existingRoute, ...route };
+  const next = { ...raw, tiers };
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  const temporaryPath = `${configPath}.${process.pid}.tmp`;
+  fs.writeFileSync(temporaryPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  fs.renameSync(temporaryPath, configPath);
+  return configPath;
+}
+
 export function modelRef(model?: PiModelLike | null): string | null {
   if (!model?.id) return null;
   return model.provider ? `${model.provider}/${model.id}` : model.id;
 }
 
 function availableModels(registry?: PiModelRegistryLike): PiModelLike[] {
-  try {
-    const available = registry?.getAvailable?.();
-    if (available && available.length > 0) return available;
-  } catch {
-    // Fall back to all models below.
+  if (registry?.getAvailable) {
+    try {
+      return registry.getAvailable() ?? [];
+    } catch {
+      // Model switching may still use the full catalogue and let Pi verify auth.
+    }
   }
   try {
     return registry?.getAll?.() ?? [];
@@ -263,15 +299,25 @@ function availableModels(registry?: PiModelRegistryLike): PiModelLike[] {
   }
 }
 
-export function findPiModel(model: string, registry?: PiModelRegistryLike): PiModelLike | undefined {
-  const slash = model.indexOf("/");
-  if (slash > 0) {
-    const provider = model.slice(0, slash);
-    const id = model.slice(slash + 1);
-    const found = registry?.find?.(provider, id);
-    if (found) return found;
+function findVerifiedAvailablePiModel(
+  model: string,
+  registry?: PiModelRegistryLike,
+): { model?: PiModelLike; inventoryAvailable: boolean } {
+  if (!registry?.getAvailable) return { inventoryAvailable: false };
+  let models: PiModelLike[];
+  try {
+    models = registry.getAvailable() ?? [];
+  } catch {
+    return { inventoryAvailable: false };
   }
+  const candidates = models.filter((candidate) => {
+    const ref = modelRef(candidate);
+    return candidate.id === model || candidate.name === model || ref === model;
+  });
+  return { model: candidates.length === 1 ? candidates[0] : undefined, inventoryAvailable: true };
+}
 
+export function findPiModel(model: string, registry?: PiModelRegistryLike): PiModelLike | undefined {
   const candidates = availableModels(registry).filter((candidate) => {
     const ref = modelRef(candidate);
     return candidate.id === model || candidate.name === model || ref === model;
@@ -341,10 +387,13 @@ export function resolveModelRouting(
     available = Boolean(inheritedModel);
     if (!inheritedModel) warnings.push("No current Pi model is available to inherit.");
   } else {
-    const found = findPiModel(requestedModel, context.modelRegistry);
-    if (found) {
+    const lookup = findVerifiedAvailablePiModel(requestedModel, context.modelRegistry);
+    if (!lookup.inventoryAvailable) {
+      warnings.push("Pi's available-model inventory is unavailable; configured child models are treated as unverified and fallback policy applies.");
+    }
+    if (lookup.model) {
       mode = "use-explicit";
-      model = modelRef(found) ?? requestedModel;
+      model = modelRef(lookup.model) ?? requestedModel;
       available = true;
     } else if (fallback === "omit") {
       mode = "omit-model";
@@ -362,35 +411,51 @@ export function resolveModelRouting(
       model = null;
       available = false;
       warnings.push(`Configured model ${requestedModel} is not available in Pi; prompt the user to choose a fallback model.`);
-    } else {
+    } else if (inheritedModel) {
       mode = "inherit-current";
       model = inheritedModel;
       available = false;
-      warnings.push(
-        inheritedModel
-          ? `Configured model ${requestedModel} is not available in Pi; inheriting current Pi model ${inheritedModel}.`
-          : `Configured model ${requestedModel} is not available in Pi and no current Pi model is available to inherit.`,
-      );
+      warnings.push(`Configured model ${requestedModel} is not available in Pi; inheriting current Pi model ${inheritedModel}.`);
+    } else {
+      mode = "error";
+      model = null;
+      available = false;
+      error = `Configured model ${requestedModel} is not available in Pi and no current Pi model is available to inherit.`;
+      warnings.push(error);
     }
   }
 
   const thinking = requestedThinking === "inherit" ? inheritedThinking : requestedThinking;
-  const routedSubagentModel = mode !== "omit-model" && model
+  const canLaunch = mode !== "error" && mode !== "prompt-user";
+  const routedSubagentModel = canLaunch && mode !== "omit-model" && model
     ? `${model}${thinking !== "inherit" ? `:${thinking}` : ""}`
     : undefined;
-  const subagent: ResolvedModelRouting["subagent"] = {
-    note: routedSubagentModel
-      ? "Pass `model` exactly as shown to pi-subagents. Its suffix makes the routed thinking level explicit and visible in subagent status."
-      : "Omit `model` when delegating. pi-subagents cannot apply a per-run thinking level without a model override; use its `defaultThinking` or agent override if thinking must be pinned.",
-  };
-  if (routedSubagentModel) subagent.model = routedSubagentModel;
-  if (thinking !== "inherit") subagent.thinking = thinking;
+  const subagent: ResolvedModelRouting["subagent"] = mode === "error"
+    ? {
+        action: "resolve-first",
+        note: "Do not delegate this target until the unavailable configured model is corrected or its fallback policy is changed.",
+      }
+    : mode === "prompt-user"
+      ? {
+          action: "resolve-first",
+          note: "Do not delegate this target yet. Run `/gsd-model` for it and choose an available fallback model first.",
+        }
+      : routedSubagentModel
+        ? {
+            action: "pass-model",
+            model: routedSubagentModel,
+            note: "Pass `model` exactly as shown to pi-subagents. Its suffix makes the routed thinking level explicit and visible in subagent status.",
+          }
+        : {
+            action: "omit-model",
+            note: "Omit `model` when delegating. pi-subagents cannot apply a per-run thinking level without a model override; use its `defaultThinking` or agent override if thinking must be pinned.",
+          };
 
   return {
     target,
     targetType,
     tier,
-    requestedModel: requestedModel === "inherit" || requestedModel === "omit" ? requestedModel : requestedModel,
+    requestedModel,
     requestedThinking,
     model,
     thinking,
@@ -409,6 +474,49 @@ export function resolveModelRouting(
   };
 }
 
+const MODEL_ROUTING_AUDIT_TARGETS: Array<{ tier: RoutingTier; agent: string }> = [
+  { tier: "heavy", agent: "gsd-planner" },
+  { tier: "standard", agent: "gsd-executor" },
+  { tier: "light", agent: "gsd-codebase-mapper" },
+];
+
+export function formatModelRoutingAudit(context: ModelRoutingContext): string {
+  const loaded = loadModelRoutingConfig(context.cwd);
+  const results = MODEL_ROUTING_AUDIT_TARGETS.map(({ tier, agent }) => ({
+    tier,
+    result: resolveModelRouting({ agent }, context),
+  }));
+  const configuredRequests: ResolveModelRoutingRequest[] = [
+    ...Object.keys(loaded.config.agents ?? {}).map((agent) => ({ agent })),
+    ...Object.keys(loaded.config.skills ?? {}).map((skill) => ({ skill })),
+    ...Object.keys(loaded.config.commands ?? {}).map((command) => ({ command })),
+  ];
+  const configuredResults = configuredRequests.slice(0, 25).map((request) => resolveModelRouting(request, context));
+  const configuredCount = configuredRequests.length;
+  const warnings = [...new Set([
+    ...loaded.warnings,
+    ...results.flatMap(({ result }) => result.warnings),
+    ...configuredResults.flatMap((result) => result.warnings),
+  ])];
+  const lines = [
+    "## Model routing audit",
+    "",
+    `- config: \`${loaded.path}\` (${fs.existsSync(loaded.path) ? "present" : "defaults only"})`,
+    `- configured target overrides: ${configuredCount}`,
+    ...results.map(({ tier, result }) => {
+      const consumer = result.subagent.model
+        ? `pass \`${result.subagent.model}\``
+        : result.subagent.action;
+      return `- ${tier} (${result.target}): Pi \`${result.model ?? "<none>"}\`, thinking \`${result.thinking}\`, child ${consumer}`;
+    }),
+    ...(configuredResults.length > 0 ? ["- configured target routes:"] : []),
+    ...configuredResults.map((result) => `  - ${result.target} (${result.targetType}): ${result.subagent.model ? `pass \`${result.subagent.model}\`` : result.subagent.action}`),
+    ...(configuredCount > configuredResults.length ? [`  - ...${configuredCount - configuredResults.length} additional route(s) omitted`] : []),
+  ];
+  if (warnings.length > 0) lines.push(...warnings.map((warning) => `- warning: ${warning}`));
+  return lines.join("\n");
+}
+
 export function formatResolvedModelRouting(result: ResolvedModelRouting): string {
   const lines = [
     "# pi-gsd model routing",
@@ -422,16 +530,12 @@ export function formatResolvedModelRouting(result: ResolvedModelRouting): string
     `- resolved thinking: ${result.thinking}`,
     `- fallback: ${result.fallback}`,
     `- available: ${result.available ? "yes" : "no"}`,
-    `- recommended action: ${result.recommendedAction.mode}`,
+    `- Pi session action: ${result.recommendedAction.mode}`,
   ];
 
-  if (result.subagent.model || result.subagent.thinking) {
-    lines.push("", "## pi-subagents consumer", "");
-    if (result.subagent.model) lines.push(`- pass model: \`${result.subagent.model}\``);
-    else lines.push("- omit model to inherit/default");
-    if (result.subagent.thinking) lines.push(`- requested thinking: \`${result.subagent.thinking}\``);
-    lines.push(`- note: ${result.subagent.note}`);
-  }
+  lines.push("", "## pi-subagents consumer", "", `- action: ${result.subagent.action}`);
+  if (result.subagent.model) lines.push(`- pass model: \`${result.subagent.model}\``);
+  lines.push(`- note: ${result.subagent.note}`);
 
   if (result.warnings.length > 0) {
     lines.push("", "## Warnings", "", ...result.warnings.map((warning) => `- ${warning}`));

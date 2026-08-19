@@ -1,0 +1,59 @@
+name: Latest compatibility
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 9 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: compatibility-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  latest:
+    name: Latest (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked baseline
+        run: npm ci
+
+      - name: Overlay latest compatibility targets
+        run: npm install --no-save --package-lock=false @earendil-works/pi-coding-agent@latest @earendil-works/pi-ai@latest typebox@latest @opengsd/gsd-core@latest
+
+      - name: Report resolved versions
+        run: node scripts/report-compat-versions.mjs
+
+      - name: Typecheck
+        run: npm run check
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+      - name: Live Pi RPC smoke
+        run: npm run test:live-pi
+
+      - name: Verify dependency metadata stayed unchanged
+        run: git diff --exit-code -- package.json package-lock.json

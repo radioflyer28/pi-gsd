@@ -8,7 +8,7 @@ import registerPiGsdExtension from "../src/extension/index.ts";
 import { parseCommandArgs, registerPiGsdCore } from "../src/extension/register.ts";
 import { capabilities, mockPi, toolText } from "./test-utils.ts";
 
-test("registerPiGsdCore registers one namespaced tool and five namespaced commands", () => {
+test("registerPiGsdCore registers one namespaced tool and six namespaced commands", () => {
   const pi = mockPi();
 
   registerPiGsdCore(pi.api, { parameters: {}, detect: () => capabilities("inline"), gsdCoreCommands: [] });
@@ -16,7 +16,7 @@ test("registerPiGsdCore registers one namespaced tool and five namespaced comman
   assert.equal(pi.tools.length, 1);
   assert.equal(pi.tools[0].name, "gsd");
   assert.equal(pi.tools[0].label, "GSD");
-  assert.deepEqual([...pi.commands.keys()].sort(), ["gsd-doctor", "gsd-init-config", "gsd-model", "gsd-run", "gsd-status"]);
+  assert.deepEqual([...pi.commands.keys()].sort(), ["gsd-doctor", "gsd-init-config", "gsd-model", "gsd-model-config", "gsd-run", "gsd-status"]);
 });
 
 test("registerPiGsdCore exposes upstream GSD Core commands as slash commands", async () => {
@@ -243,6 +243,96 @@ test("registered tool resolves Pi-native model routing with inherit fallback", a
   assert.match(toolText(result), /tier: heavy/);
   assert.match(toolText(result), /resolved model: openai\/gpt-5\.3-codex/);
   assert.match(toolText(result), /resolved thinking: xhigh/);
+});
+
+test("gsd-model-config interactively writes a provider-neutral tier route", async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-gsd-model-config-"));
+  try {
+    const pi = mockPi();
+    registerPiGsdCore(pi.api, { parameters: {}, detect: () => capabilities("inline"), defaultCwd: cwd, gsdCoreCommands: [] });
+    const selections = ["openai/custom", "max", "error"];
+    const response = await pi.commands.get("gsd-model-config")!.handler("light", {
+      cwd,
+      ui: {
+        select: async () => selections.shift(),
+        confirm: async () => true,
+      },
+      model: { provider: "openai", id: "current" },
+      modelRegistry: { getAvailable: () => [{ provider: "openai", id: "custom" }] },
+    });
+
+    assert.match(response.text, /Updated light model routing/);
+    const config = JSON.parse(fs.readFileSync(path.join(cwd, ".pi-gsd", "model-routing.json"), "utf8"));
+    assert.deepEqual(config.tiers.light, { model: "openai/custom", thinking: "max", fallback: "error" });
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("gsd-model-config cancellation leaves routing config unchanged", async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-gsd-model-config-"));
+  try {
+    const configDir = path.join(cwd, ".pi-gsd");
+    fs.mkdirSync(configDir);
+    const configPath = path.join(configDir, "model-routing.json");
+    const original = '{"fallback":"inherit"}\n';
+    fs.writeFileSync(configPath, original);
+    const pi = mockPi();
+    registerPiGsdCore(pi.api, { parameters: {}, detect: () => capabilities("inline"), defaultCwd: cwd, gsdCoreCommands: [] });
+    const response = await pi.commands.get("gsd-model-config")!.handler("heavy", {
+      cwd,
+      ui: { select: async () => "Cancel" },
+      modelRegistry: { getAvailable: () => [] },
+    });
+    assert.match(response.text, /cancelled/);
+    assert.equal(fs.readFileSync(configPath, "utf8"), original);
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("warn-only validator checks and consumes freshly resolved child routes", async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-gsd-routing-validator-"));
+  try {
+    const pi = mockPi(undefined, [{ name: "subagent" }], ["subagent"]);
+    registerPiGsdCore(pi.api, { parameters: {}, detect: () => capabilities("delegated"), defaultCwd: cwd, gsdCoreCommands: [] });
+    await pi.tools[0].execute("resolve", { action: "resolve-model", agent: "gsd-codebase-mapper" }, undefined, undefined, {
+      cwd,
+      model: { provider: "openai", id: "current" },
+      modelRegistry: { getAvailable: () => [{ provider: "openai", id: "current" }] },
+    });
+    const warnings: string[] = [];
+    const handler = pi.handlers.get("tool_call")![0];
+    const outcome = await handler({ toolName: "subagent", input: { agent: "delegate" } }, { cwd, ui: { notify: (message: string) => warnings.push(message) } });
+    assert.equal(outcome, undefined);
+    assert.match(warnings.join("\n"), /expected exact model `openai\/current:medium`/);
+
+    warnings.length = 0;
+    await handler({ toolName: "subagent", input: { agent: "delegate" } }, { cwd, ui: { notify: (message: string) => warnings.push(message) } });
+    assert.equal(warnings.length, 0, "pending route should be consumed after one launch attempt");
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("warn-only validator accepts exact model and ignores management calls", async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-gsd-routing-validator-"));
+  try {
+    const pi = mockPi(undefined, [{ name: "subagent" }], ["subagent"]);
+    registerPiGsdCore(pi.api, { parameters: {}, detect: () => capabilities("delegated"), defaultCwd: cwd, gsdCoreCommands: [] });
+    const handler = pi.handlers.get("tool_call")![0];
+    const warnings: string[] = [];
+    await handler({ toolName: "subagent", input: { action: "list" } }, { cwd, ui: { notify: (message: string) => warnings.push(message) } });
+    await pi.tools[0].execute("resolve", { action: "resolve-model", agent: "gsd-codebase-mapper" }, undefined, undefined, {
+      cwd,
+      model: { provider: "openai", id: "current" },
+      modelRegistry: { getAvailable: () => [{ provider: "openai", id: "current" }] },
+    });
+    await handler({ toolName: "subagent", input: { agent: "delegate", model: "openai/current:medium" } }, { cwd, ui: { notify: (message: string) => warnings.push(message) } });
+    assert.deepEqual(warnings, []);
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
 });
 
 test("gsd-model command applies inherited route thinking without forcing a model", async () => {

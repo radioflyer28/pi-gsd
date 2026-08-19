@@ -27,17 +27,17 @@ test("discovers multiple upstream command markdown files from a flat command dir
   assert.equal(commands[1].coreName, "gsd:verify-work");
 });
 
-test("bundled v1.10.0 GSD Core commands are exposed through dynamic discovery", () => {
+test("bundled GSD Core commands are exposed through dynamic discovery", () => {
   const commands = discoverGsdCoreCommands();
   const slashNames = new Set(commands.map((command) => command.slashName));
 
-  assert.equal(commands.length, 71);
+  assert.ok(commands.length >= 50, `expected broad GSD Core command coverage, found ${commands.length}`);
   for (const slashName of ["gsd-next", "gsd-onboard", "gsd-mempalace-capture", "gsd-mempalace-recall"]) {
     assert.ok(slashNames.has(slashName), `expected ${slashName} from package-local gsd-core`);
   }
 });
 
-test("bundled v1.10.0 gsd-next resolves its workflow inside the package-local core", () => {
+test("bundled gsd-next resolves its workflow inside the package-local core", () => {
   const command = discoverGsdCoreCommands().find(({ slashName }) => slashName === "gsd-next");
   assert.ok(command, "expected package-local gsd-next command");
 
@@ -124,7 +124,8 @@ test("config command prompt expansion injects Pi config update requirements", ()
   assert.match(prompt, /direct `node \.\.\.\/gsd-tools\.cjs` command/);
   assert.match(prompt, /Before launching each distinct upstream GSD subagent role/);
   assert.match(prompt, /resolve-model.*exact-gsd-agent-name/);
-  assert.match(prompt, /suffix carries the routed thinking level/);
+  assert.match(prompt, /pass-model.*exact suffixed model/);
+  assert.match(prompt, /resolve-first.*do not delegate/);
 });
 
 test("command prompt expansion uses Pi's collapsible skill-block envelope", () => {

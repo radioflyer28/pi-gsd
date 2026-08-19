@@ -1,3 +1,5 @@
+import * as path from "node:path";
+
 import {
   createGsdDispatcher,
   type GsdAction,
@@ -20,6 +22,9 @@ import {
   resolveModelRouting,
   type ModelRoutingContext,
   type ResolvedModelRouting,
+  type RoutingTier,
+  type ThinkingLevel,
+  writeModelTierRoute,
 } from "./model-routing.ts";
 
 type TextContent = {
@@ -40,12 +45,28 @@ export type RegisterablePiApi = {
   getActiveTools?: () => string[];
   getAllTools?: () => Array<{ name?: string }>;
   getCommands?: () => Array<{ name?: string }>;
-  getThinkingLevel?: () => "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
-  setThinkingLevel?: (level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh") => void;
+  getThinkingLevel?: () => "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+  setThinkingLevel?: (level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max") => void;
   setModel?: (model: unknown) => Promise<boolean>;
   sendUserMessage?: (message: string, options?: { deliverAs?: "steer" | "followUp" }) => void;
+  on?: (eventName: string, handler: (event: any, ctx: any) => unknown) => void;
   exec?: PiExec;
 };
+
+type RuntimeRoutingState = {
+  activeWorkflowCwds: Set<string>;
+  pendingByCwd: Map<string, Map<string, ResolvedModelRouting["subagent"]>>;
+};
+
+function pendingRoutesFor(state: RuntimeRoutingState, cwd: string): Map<string, ResolvedModelRouting["subagent"]> {
+  const resolvedCwd = path.resolve(cwd);
+  let pending = state.pendingByCwd.get(resolvedCwd);
+  if (!pending) {
+    pending = new Map();
+    state.pendingByCwd.set(resolvedCwd, pending);
+  }
+  return pending;
+}
 
 export type RegisterPiGsdOptions = {
   parameters: unknown;
@@ -147,11 +168,16 @@ async function executeGsd(
   defaultCwd?: string,
   pi?: RegisterablePiApi,
   sessionModelOverrides?: Map<string, string>,
+  runtimeRoutingState?: RuntimeRoutingState,
 ): Promise<PiToolResult> {
   const action = params.action ?? "status";
   const cwd = resolveCwd(params, ctx, defaultCwd);
   const args = Array.isArray(params.args) ? params.args : [];
   const routingContext = modelContext(cwd, ctx, pi, sessionModelOverrides);
+  if (action === "resolve-model" && runtimeRoutingState) {
+    const resolved = resolveModelRouting(params, routingContext);
+    pendingRoutesFor(runtimeRoutingState, cwd).set(resolved.target, resolved.subagent);
+  }
 
   const result =
     action === "status"
@@ -221,11 +247,12 @@ function commandHandler(
   defaultCwd?: string,
   pi?: RegisterablePiApi,
   sessionModelOverrides?: Map<string, string>,
+  runtimeRoutingState?: RuntimeRoutingState,
 ) {
   return async (argsOrCtx: unknown, maybeCtx?: GsdExecutionContext) => {
     const ctx = (maybeCtx ?? argsOrCtx) as GsdExecutionContext | undefined;
     const args = typeof argsOrCtx === "string" && action === "run" ? parseCommandArgs(argsOrCtx) : [];
-    const result = await executeGsd(dispatcher, { action, args }, undefined, ctx, defaultCwd, pi, sessionModelOverrides);
+    const result = await executeGsd(dispatcher, { action, args }, undefined, ctx, defaultCwd, pi, sessionModelOverrides, runtimeRoutingState);
     const text = result.content[0]?.text ?? "";
 
     return { text };
@@ -246,12 +273,16 @@ function parseGsdModelTarget(input: unknown): GsdParams {
 function availableModelRefs(ctx?: GsdExecutionContext): string[] {
   const registry = ctx?.modelRegistry;
   let models: unknown[] = [];
-  try {
-    models = registry?.getAvailable?.() ?? [];
-  } catch {
-    models = [];
+  let availabilityKnown = false;
+  if (registry?.getAvailable) {
+    try {
+      models = registry.getAvailable() ?? [];
+      availabilityKnown = true;
+    } catch {
+      availabilityKnown = false;
+    }
   }
-  if (models.length === 0) {
+  if (!availabilityKnown) {
     try {
       models = registry?.getAll?.() ?? [];
     } catch {
@@ -287,7 +318,13 @@ function extractConfigProfile(rawArgs: string): string | null | undefined {
   return undefined;
 }
 
-function gsdCoreCommandHandler(command: GsdCoreCommand, pi: RegisterablePiApi, dispatcher: GsdDispatcher, defaultCwd?: string) {
+function gsdCoreCommandHandler(
+  command: GsdCoreCommand,
+  pi: RegisterablePiApi,
+  dispatcher: GsdDispatcher,
+  defaultCwd: string | undefined,
+  runtimeRoutingState: RuntimeRoutingState,
+) {
   return async (argsOrCtx: unknown, maybeCtx?: GsdExecutionContext & { isIdle?: () => boolean; ui?: { notify?: (message: string, level?: "info" | "warning" | "error") => void } }) => {
     const args = typeof argsOrCtx === "string" ? argsOrCtx : "";
     const ctx = (maybeCtx ?? argsOrCtx) as (GsdExecutionContext & { isIdle?: () => boolean; ui?: { notify?: (message: string, level?: "info" | "warning" | "error") => void } }) | undefined;
@@ -311,6 +348,9 @@ function gsdCoreCommandHandler(command: GsdCoreCommand, pi: RegisterablePiApi, d
       return;
     }
 
+    const cwd = resolveCwd({}, ctx, defaultCwd);
+    runtimeRoutingState.activeWorkflowCwds.add(cwd);
+    pendingRoutesFor(runtimeRoutingState, cwd).clear();
     pi.sendUserMessage(expandGsdCoreCommandPrompt(command, args));
     appendPiGsdDiagnostic(resolveCwd({}, ctx, defaultCwd), {
       event: "command",
@@ -391,6 +431,101 @@ function applyThinkingLevel(
     : `Requested Pi thinking level ${resolved.thinking}; this Pi runtime does not expose the effective level.`;
 }
 
+function representativeAgentForTier(tier: RoutingTier): string {
+  return tier === "heavy" ? "gsd-planner" : tier === "standard" ? "gsd-executor" : "gsd-codebase-mapper";
+}
+
+function parseRoutingTier(input: unknown): RoutingTier | undefined {
+  const tier = typeof input === "string" ? input.trim().split(/\s+/)[0] : undefined;
+  return tier === "heavy" || tier === "standard" || tier === "light" ? tier : undefined;
+}
+
+function gsdModelConfigCommandHandler(defaultCwd: string | undefined, pi: RegisterablePiApi) {
+  return async (argsOrCtx: unknown, maybeCtx?: GsdExecutionContext) => {
+    const ctx = (maybeCtx ?? argsOrCtx) as GsdExecutionContext | undefined;
+    const cwd = resolveCwd({}, ctx, defaultCwd);
+    let tier = parseRoutingTier(argsOrCtx);
+    if (!tier && ctx?.ui?.select) {
+      const choice = await ctx.ui.select("Configure GSD model tier", ["heavy", "standard", "light", "Cancel"]);
+      tier = parseRoutingTier(choice);
+    }
+    if (!tier) return { text: "Usage: /gsd-model-config <heavy|standard|light> (interactive Pi UI required)" };
+    if (!ctx?.ui?.select) return { text: "Interactive Pi UI is required to choose a model and thinking level." };
+
+    const models = availableModelRefs(ctx);
+    const model = await ctx.ui.select(`Model for ${tier} GSD work`, ["inherit", "omit", ...models, "Cancel"]);
+    if (!model || model === "Cancel") return { text: "Model routing configuration cancelled; no files changed." };
+    const thinking = await ctx.ui.select(`Thinking for ${tier} GSD work`, ["inherit", "off", "minimal", "low", "medium", "high", "xhigh", "max", "Cancel"]);
+    if (!thinking || thinking === "Cancel") return { text: "Model routing configuration cancelled; no files changed." };
+    const fallback = await ctx.ui.select(`Fallback for unavailable ${tier} model`, ["inherit", "omit", "error", "prompt", "Cancel"]);
+    if (!fallback || fallback === "Cancel") return { text: "Model routing configuration cancelled; no files changed." };
+    if (ctx.ui.confirm) {
+      const confirmed = await ctx.ui.confirm(
+        `Save ${tier} GSD route?`,
+        `Model: ${model}\nThinking: ${thinking}\nFallback: ${fallback}`,
+      );
+      if (!confirmed) return { text: "Model routing configuration cancelled; no files changed." };
+    }
+
+    try {
+      const configPath = writeModelTierRoute(cwd, tier, {
+        model,
+        thinking: thinking as ThinkingLevel,
+        fallback: fallback as "inherit" | "omit" | "error" | "prompt",
+      });
+      const resolved = resolveModelRouting(
+        { agent: representativeAgentForTier(tier) },
+        modelContext(cwd, ctx, pi),
+      );
+      return {
+        text: [
+          `Updated ${tier} model routing in ${configPath}.`,
+          `Effective representative route: ${resolved.model ?? "<none>"}, thinking ${resolved.thinking}.`,
+          resolved.subagent.model
+            ? `pi-subagents model: ${resolved.subagent.model}`
+            : `pi-subagents action: ${resolved.subagent.action}`,
+        ].join("\n"),
+      };
+    } catch (error) {
+      return { text: `Could not update model routing: ${error instanceof Error ? error.message : String(error)}` };
+    }
+  };
+}
+
+export function subagentRoutingWarning(
+  input: unknown,
+  routes: Map<string, ResolvedModelRouting["subagent"]>,
+): string | undefined {
+  if (!input || typeof input !== "object") return undefined;
+  const params = input as Record<string, unknown>;
+  if (typeof params.action === "string") return undefined;
+  if (!("workflowScript" in params) && !("agent" in params)) return undefined;
+  if (routes.size === 0) {
+    return "GSD subagent launch has no recorded model route. Resolve each distinct GSD agent role before delegating.";
+  }
+
+  const unresolved = [...routes.entries()].filter(([, route]) => route.action === "resolve-first");
+  if (unresolved.length > 0) {
+    return `GSD subagent launch includes unresolved route(s): ${unresolved.map(([target]) => target).join(", ")}. Resolve them before delegating.`;
+  }
+
+  const expected = [...new Set([...routes.values()].map((route) => route.model).filter((model): model is string => Boolean(model)))];
+  const omitOnly = expected.length === 0 && [...routes.values()].every((route) => route.action === "omit-model");
+  const suppliedModel = typeof params.model === "string" ? params.model : undefined;
+  if (omitOnly) {
+    return suppliedModel
+      ? "GSD subagent launch supplied a model even though the resolved child guidance says to omit it."
+      : undefined;
+  }
+  if (expected.length > 1) {
+    return "GSD subagent launch has multiple distinct pending model routes; a top-level workflow default cannot verify mixed per-child routing. Verify each child override.";
+  }
+  if (expected.length === 1 && suppliedModel !== expected[0]) {
+    return `GSD subagent launch model is ${suppliedModel ? `\`${suppliedModel}\`` : "missing"}; expected exact model \`${expected[0]}\`.`;
+  }
+  return undefined;
+}
+
 function gsdModelCommandHandler(defaultCwd: string | undefined, pi: RegisterablePiApi, sessionModelOverrides: Map<string, string>) {
   return async (argsOrCtx: unknown, maybeCtx?: GsdExecutionContext) => {
     const ctx = (maybeCtx ?? argsOrCtx) as GsdExecutionContext | undefined;
@@ -425,6 +560,10 @@ export function registerPiGsdCore(pi: RegisterablePiApi, options: RegisterPiGsdO
         packageRoot: options.packageRoot,
       })(cwd));
   const sessionModelOverrides = new Map<string, string>();
+  const runtimeRoutingState: RuntimeRoutingState = {
+    activeWorkflowCwds: new Set(),
+    pendingByCwd: new Map(),
+  };
   const gsdCoreCommands = options.gsdCoreCommands ?? discoverGsdCoreCommands({ packageRoot: options.packageRoot, exists: options.exists });
   const dispatcher =
     options.dispatcher ??
@@ -449,7 +588,7 @@ export function registerPiGsdCore(pi: RegisterablePiApi, options: RegisterPiGsdO
       "Use context-mode `ctx_*` tools only for bulky or transient context when available.",
       "Use `gsd` action `init-config` only when the user wants editable project-local pi-gsd defaults.",
       "Use `gsd` action `resolve-model` to resolve Pi-native model/thinking guidance for GSD agents, skills, or commands.",
-      "Before launching each distinct GSD subagent role, call `gsd` action `resolve-model` for its exact agent name. When pi-subagents is available, pass `subagent.model` exactly when present; its suffix carries the routed thinking level and makes it visible in subagent status. Omit model only when the consumer block says to omit it.",
+      "Before launching each distinct GSD subagent role, call `gsd` action `resolve-model` for its exact agent name and obey the pi-subagents consumer action: pass the exact model for `pass-model`, omit it for `omit-model`, and do not delegate for `resolve-first`.",
       "Use pi-subagents directly for large planning/execution/review when available; do not expect the `gsd` tool to orchestrate subagents internally.",
     ],
     parameters: options.parameters,
@@ -459,27 +598,59 @@ export function registerPiGsdCore(pi: RegisterablePiApi, options: RegisterPiGsdO
       signal?: AbortSignal,
       _onUpdate?: unknown,
       ctx?: GsdExecutionContext,
-    ) => executeGsd(dispatcher, params, signal, ctx, options.defaultCwd, pi, sessionModelOverrides),
+    ) => executeGsd(dispatcher, params, signal, ctx, options.defaultCwd, pi, sessionModelOverrides, runtimeRoutingState),
+  });
+
+  pi.on?.("tool_call", (event: { toolName?: string; input?: unknown }, ctx: GsdExecutionContext) => {
+    try {
+      if (event.toolName !== "subagent") return;
+      const cwd = path.resolve(ctx.cwd ?? options.defaultCwd ?? process.cwd());
+      if (!detect(cwd).subagents) return;
+      const pending = pendingRoutesFor(runtimeRoutingState, cwd);
+      if (!runtimeRoutingState.activeWorkflowCwds.has(cwd) && pending.size === 0) return;
+      const executionCall = event.input && typeof event.input === "object" && !("action" in event.input);
+      const warning = subagentRoutingWarning(event.input, pending);
+      if (warning) {
+        ctx.ui?.notify?.(warning, "warning");
+        appendPiGsdDiagnostic(cwd, {
+          event: "tool",
+          target: "subagent.routing-warning",
+          outcome: "error",
+        });
+      }
+      if (executionCall) pending.clear();
+    } catch {
+      // Advisory validation must never block or break pi-subagents execution.
+    }
+  });
+  pi.on?.("agent_end", () => {
+    runtimeRoutingState.activeWorkflowCwds.clear();
+    runtimeRoutingState.pendingByCwd.clear();
   });
 
   pi.registerCommand?.("gsd-status", {
     description: "Show pi-gsd status and optional integration detection.",
-    handler: commandHandler(dispatcher, "status", options.defaultCwd, pi, sessionModelOverrides),
+    handler: commandHandler(dispatcher, "status", options.defaultCwd, pi, sessionModelOverrides, runtimeRoutingState),
   });
 
   pi.registerCommand?.("gsd-doctor", {
     description: "Show pi-gsd diagnostics and integration guidance.",
-    handler: commandHandler(dispatcher, "doctor", options.defaultCwd, pi, sessionModelOverrides),
+    handler: commandHandler(dispatcher, "doctor", options.defaultCwd, pi, sessionModelOverrides, runtimeRoutingState),
   });
 
   pi.registerCommand?.("gsd-run", {
     description: "Run gsd-tools through the thin wrapper: /gsd-run <args>",
-    handler: commandHandler(dispatcher, "run", options.defaultCwd, pi, sessionModelOverrides),
+    handler: commandHandler(dispatcher, "run", options.defaultCwd, pi, sessionModelOverrides, runtimeRoutingState),
   });
 
   pi.registerCommand?.("gsd-model", {
     description: "Resolve and explicitly switch to the Pi model/thinking level configured for a GSD agent, skill, or command.",
     handler: gsdModelCommandHandler(options.defaultCwd, pi, sessionModelOverrides),
+  });
+
+  pi.registerCommand?.("gsd-model-config", {
+    description: "Interactively configure provider-neutral heavy, standard, or light GSD model routing.",
+    handler: gsdModelConfigCommandHandler(options.defaultCwd, pi),
   });
 
   pi.registerCommand?.("gsd-init-config", {
@@ -492,7 +663,7 @@ export function registerPiGsdCore(pi: RegisterablePiApi, options: RegisterPiGsdO
       description: command.argumentHint
         ? `${command.argumentHint} — ${command.description}`
         : command.description,
-      handler: gsdCoreCommandHandler(command, pi, dispatcher, options.defaultCwd),
+      handler: gsdCoreCommandHandler(command, pi, dispatcher, options.defaultCwd, runtimeRoutingState),
     });
   }
 }

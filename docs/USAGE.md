@@ -93,7 +93,7 @@ Arguments are parsed with shell-like quoting so spaces inside quoted values are 
 
 ### `/gsd-model [agent|skill|command] <target>`
 
-Resolves the Pi-native model/thinking route for a GSD target and explicitly applies it to the current Pi session when an explicit configured model is available.
+Resolves the Pi-native model/thinking route for a GSD target and applies it only to the current Pi session when an explicit configured model is available. It does not persist routing or arm child-launch validation.
 
 Examples:
 
@@ -104,6 +104,10 @@ Examples:
 ```
 
 If the route inherits or omits the model, the current Pi model is left unchanged. Thinking level is applied when the route resolves to a concrete Pi thinking level; pi-gsd reports Pi's effective level after model-capability clamping. A cancelled or unavailable prompt fallback leaves both model and thinking unchanged.
+
+### `/gsd-model-config <heavy|standard|light>`
+
+Interactively selects an available provider-qualified model, thinking level, and fallback policy for a GSD tier, previews the representative effective route, and persists it in `.pi-gsd/model-routing.json`. Cancellation and malformed existing JSON leave the file unchanged.
 
 ### `/gsd-init-config`
 
@@ -143,7 +147,7 @@ The `cwd` parameter can be provided when the command should run against a differ
 
 Other accepted selectors are `skill`, `command`, or a generic `target`.
 
-The result includes a Pi-native resolved model, thinking level, warnings, and a `subagent` block. When `subagent.model` is present, pass it exactly to the `subagent` tool. Its model suffix carries the routed thinking level so pi-subagents both applies and displays it. When absent, omit `model`; if thinking must still be pinned, configure pi-subagents `defaultThinking` or an agent override.
+The result includes Pi-native session guidance and a separate pi-subagents consumer block. Obey its action: `pass-model` requires the exact suffixed model, `omit-model` requires no model override, and `resolve-first` means do not delegate until the configured error or user-choice requirement is resolved. There is intentionally no standalone child `thinking` argument.
 
 ### Init config
 
@@ -166,11 +170,16 @@ By default, this creates missing files but does not overwrite existing project c
   "integrations": {
     "subagents": "auto",
     "contextMode": "auto"
+  },
+  "safety": {
+    "upstreamGuards": "off"
   }
 }
 ```
 
-Supported values are `"auto"` and `"off"`. `"off"` does not uninstall or hide the underlying Pi tool globally; it only makes pi-gsd treat that integration as unavailable for this project. If `contextMode` is `"off"`, pi-gsd's context-mode guard allows context-mode tool calls without adding pi-gsd warnings or blocks.
+Integration values support `"auto"` and `"off"`. `"off"` does not uninstall or hide the underlying Pi tool globally; it only makes pi-gsd treat that integration as unavailable for this project. If `contextMode` is `"off"`, pi-gsd's context-mode guard allows context-mode tool calls without adding pi-gsd warnings or blocks.
+
+`safety.upstreamGuards` is separately opt-in. Set it to `"on"` to execute only GSD Core's package-local whole-file planning shrink guard and GSD-managed worktree path guard before relevant Pi `write`/`edit` calls. Valid upstream block decisions are preserved; bridge failures and non-block output allow execution. Claude canonical-path, statusline context, provider-payload steering, and inert official hook placeholders are not bridged.
 
 ## How context-mode should be used
 
@@ -247,8 +256,8 @@ Fallback policies:
 | --- | --- |
 | `inherit` | Use the current Pi session model. Default. |
 | `omit` | Return no model so the downstream runtime inherits/defaults. |
-| `error` | Surface an error instead of silently falling back. |
-| `prompt` | Ask the user to choose an available Pi model when `/gsd-model` is used. |
+| `error` | Surface an error and return `resolve-first`; child launch must stop. |
+| `prompt` | Return `resolve-first` until `/gsd-model` obtains a user choice. |
 
 If a configured model is not available in Pi, `inherit` keeps the current Pi model and emits a warning. `prompt` is opt-in; when the user chooses a fallback model, `pi-gsd` remembers that answer for the target agent/skill/command for the current Pi extension session and subsequent `resolve-model` calls use the remembered model.
 
@@ -276,7 +285,7 @@ Before delegating GSD-specific work, resolve routing through the shared resolver
 { "action": "resolve-model", "agent": "gsd-planner" }
 ```
 
-Then consume the returned `subagent` block. Pass `subagent.model` exactly when present; otherwise omit `model` as instructed. Resolve each distinct upstream GSD agent role rather than routing only the enclosing skill. Default pi-gsd routes snapshot the parent model with a tier-specific thinking suffix; configure explicit tier or agent models in `.pi-gsd/model-routing.json` when children should use different models.
+Then obey the returned pi-subagents consumer action. Resolve each distinct upstream GSD agent role immediately before its launch rather than routing only the enclosing skill. A warn-only validator checks the next launch's top-level model contract and consumes the pending guidance; it never mutates or blocks the call. Mixed per-child model workflows receive only a limited advisory because arbitrary workflow JavaScript cannot be mapped reliably to roles.
 
 ## State and artifact rules
 
@@ -291,10 +300,15 @@ Then consume the returned `subagent` block. Pass `subagent.model` exactly when p
 Before considering a local change ready:
 
 ```bash
-npm run typecheck
+npm run check
 npm run build
 npm test
+npm run test:live-pi
+npm run test:live-subagent  # skips unless PI_GSD_RUN_LIVE_SUBAGENT=1
+npm run release:check
 ```
+
+The credential-bearing subagent probe requires `PI_GSD_LIVE_MODEL=provider/model`, `PI_GSD_LIVE_API_KEY_ENV=<credential-variable-name>`, and a non-empty value in that named variable. A trusted local run may instead set `PI_GSD_LIVE_USE_EXISTING_AUTH=1` to use Pi's credential store. It launches one child and should run only against trusted code; ordinary test runs skip it.
 
 Then run:
 

@@ -17,6 +17,11 @@ export type IntegrationProvenance =
   | "filesystem-inactive"
   | "not-detected";
 
+export type IntegrationPackageInfo = {
+  path: string;
+  version?: string;
+};
+
 export type Capabilities = {
   gsdCore: boolean;
   subagents: boolean;
@@ -31,6 +36,10 @@ export type Capabilities = {
     subagents: IntegrationProvenance;
     contextMode: IntegrationProvenance;
   };
+  integrationPackages: {
+    subagents?: IntegrationPackageInfo;
+    contextMode?: IntegrationPackageInfo;
+  };
   activeToolInventoryAvailable: boolean;
   upstreamPiPlugin: {
     activeTool: boolean;
@@ -40,6 +49,9 @@ export type Capabilities = {
   integrationSettings: {
     subagents: IntegrationMode;
     contextMode: IntegrationMode;
+  };
+  safetySettings: {
+    upstreamGuards: "on" | "off";
   };
   configPath: string;
   configWarnings: string[];
@@ -149,12 +161,12 @@ function detectOptionalIntegration(
   publicToolNames: string[],
   candidates: string[],
   exists: ExistsProbe,
-): { path: string | null; provenance: IntegrationProvenance; available: boolean } {
+): { path: string | null; installedPath: string | null; provenance: IntegrationProvenance; available: boolean } {
   const pathOnDisk = firstExisting(candidates, exists);
   if (activeToolInventoryAvailable) {
     const activeToolName = firstActiveTool(activeToolNames, publicToolNames);
     if (activeToolName) {
-      return { path: `<active-tool:${activeToolName}>`, provenance: "active-tool", available: true };
+      return { path: `<active-tool:${activeToolName}>`, installedPath: pathOnDisk, provenance: "active-tool", available: true };
     }
 
     const registeredToolName = registeredToolInventoryAvailable
@@ -163,19 +175,34 @@ function detectOptionalIntegration(
     if (registeredToolName) {
       return {
         path: `<registered-tool:${registeredToolName}>`,
+        installedPath: pathOnDisk,
         provenance: "registered-tool-inactive",
         available: false,
       };
     }
 
     return pathOnDisk
-      ? { path: pathOnDisk, provenance: "filesystem-inactive", available: false }
-      : { path: null, provenance: "not-detected", available: false };
+      ? { path: pathOnDisk, installedPath: pathOnDisk, provenance: "filesystem-inactive", available: false }
+      : { path: null, installedPath: null, provenance: "not-detected", available: false };
   }
 
   return pathOnDisk
-    ? { path: pathOnDisk, provenance: "filesystem", available: true }
-    : { path: null, provenance: "not-detected", available: false };
+    ? { path: pathOnDisk, installedPath: pathOnDisk, provenance: "filesystem", available: true }
+    : { path: null, installedPath: null, provenance: "not-detected", available: false };
+}
+
+function inspectPackageInfo(packagePath: string | null): IntegrationPackageInfo | undefined {
+  if (!packagePath) return undefined;
+  const manifestPath = path.join(packagePath, "package.json");
+  try {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as { version?: unknown };
+    return {
+      path: packagePath,
+      ...(typeof manifest.version === "string" ? { version: manifest.version } : {}),
+    };
+  } catch {
+    return { path: packagePath };
+  }
 }
 
 export function detectCapabilities(options: CapabilityDetectionOptions = {}): Capabilities {
@@ -228,6 +255,8 @@ export function detectCapabilities(options: CapabilityDetectionOptions = {}): Ca
 
   const detectedSubagents = Boolean(paths.subagents);
   const detectedContextMode = Boolean(paths.contextMode);
+  const subagentsPackage = inspectPackageInfo(subagents.installedPath);
+  const contextModePackage = inspectPackageInfo(contextMode.installedPath);
   const hasSubagents = integrationSettings.subagents !== "off" && subagents.available;
   const hasContextMode = integrationSettings.contextMode !== "off" && contextMode.available;
   const mode: GsdMode =
@@ -253,6 +282,10 @@ export function detectCapabilities(options: CapabilityDetectionOptions = {}): Ca
       subagents: subagents.provenance,
       contextMode: contextMode.provenance,
     },
+    integrationPackages: {
+      ...(subagentsPackage ? { subagents: subagentsPackage } : {}),
+      ...(contextModePackage ? { contextMode: contextModePackage } : {}),
+    },
     activeToolInventoryAvailable,
     upstreamPiPlugin: {
       activeTool: activeToolInventoryAvailable && activeToolNames.has("gsd_invoke"),
@@ -260,6 +293,7 @@ export function detectCapabilities(options: CapabilityDetectionOptions = {}): Ca
       paths: upstreamPiPluginCandidates(homeDir, cwd).filter((candidate) => exists(candidate)),
     },
     integrationSettings,
+    safetySettings: loadedConfig.config.safety,
     configPath: loadedConfig.path,
     configWarnings: loadedConfig.warnings,
   };

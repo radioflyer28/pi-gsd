@@ -2,7 +2,7 @@
 
 `pi-gsd` is a thin [Pi](https://github.com/earendil-works/pi-coding-agent) package that exposes upstream `@opengsd/gsd-core` workflows inside Pi.
 
-It does **not** reimplement GSD. It registers a small Pi tool, slash commands, and guardrails that help Pi use GSD safely while keeping workflow behavior in upstream GSD Core. The bundled compatibility baseline is GSD Core v1.10.0.
+It does **not** reimplement GSD. It registers a small Pi tool, slash commands, and guardrails that help Pi use GSD safely while keeping workflow behavior in upstream GSD Core. The v0.2.0 compatibility baseline is Pi 0.84.2, GSD Core 1.10.0, and pi-subagents 0.51.0.
 
 ## Why?
 - I want to use GSD inside Pi.
@@ -25,7 +25,8 @@ It does **not** reimplement GSD. It registers a small Pi tool, slash commands, a
     - `/gsd-status`
     - `/gsd-doctor`
     - `/gsd-run <args>`
-    - `/gsd-model [agent|skill|command] <target>`
+    - `/gsd-model [agent|skill|command] <target>` — switch the current Pi session only.
+    - `/gsd-model-config <heavy|standard|light>` — interactively persist a provider-neutral tier route.
     - `/gsd-init-config`
 - **Agent guidance embedded in extension tool metadata** so pi-gsd presents as an extension/package, not as a competing GSD skill.
 - **Optional integration awareness** for:
@@ -109,7 +110,7 @@ Pi is provider/runtime agnostic, so `pi-gsd` keeps GSD Core model IDs omitted/in
 
 Optional project-local routing lives in `.pi-gsd/model-routing.json`. If no route is configured, `pi-gsd` inherits the current Pi model and applies tier-based thinking defaults. For pi-subagents, the consumer block snapshots that inherited model and appends the thinking suffix (for example, `openai-codex/gpt-5.6-sol:medium`) because pi-subagents cannot apply or display a per-run thinking level separately from a model override.
 
-Use `/gsd-model agent gsd-planner` to explicitly switch the current Pi model/thinking level when the route resolves to an available configured model. Set `fallback: "prompt"` to ask the user to choose an available Pi model when a configured route is unavailable; chosen fallback models are remembered per target for the current Pi extension session.
+Use `/gsd-model agent gsd-planner` to explicitly switch the current Pi session model/thinking level when the route resolves to an available configured model. It does not persist configuration or arm child routing. Use `/gsd-model-config heavy`, `standard`, or `light` to select an available provider-qualified model, thinking level, and fallback policy and save it to `.pi-gsd/model-routing.json`. Set `fallback: "prompt"` to require a user choice before delegation when a configured model is unavailable; chosen `/gsd-model` fallbacks are remembered per target for the current extension session.
 
 ### Run upstream GSD Core
 
@@ -141,6 +142,9 @@ By default, `pi-gsd` auto-detects `context-mode` and `pi-subagents` when their t
   },
   "diagnostics": {
     "sessionLog": "off"
+  },
+  "safety": {
+    "upstreamGuards": "off"
   }
 }
 ```
@@ -150,6 +154,8 @@ Set either value to `"off"` to make `pi-gsd` treat that integration as unavailab
 ### Private diagnostics
 
 Set `diagnostics.sessionLog` to `"on"` to record a capped, argument-free command outcome log at `.pi-gsd/diagnostics.jsonl`. It is opt-in, best-effort support data—not GSD workflow state—and `/gsd-status` reports whether it is enabled. Keep it off for projects that do not need local troubleshooting history.
+
+Set `safety.upstreamGuards` to `"on"` to opt into two package-local, upstream-owned hard guards: catastrophic whole-file shrink protection for curated `.planning/` artifacts and cross-root writes from GSD-managed worktrees. pi-gsd maps only verified block results; missing scripts, timeouts, crashes, malformed output, and adapter errors fail open. Other official lifecycle bridges remain disabled because they are Claude-specific, inert under Pi, or lack a semantics-preserving Pi event mapping.
 
 ### context-mode
 
@@ -177,7 +183,7 @@ When `pi-subagents` is loaded, `pi-gsd` reports it and instructs agents to call 
 
 The `gsd` tool does not call subagents internally. Large planning, execution, review, and verification work should use `pi-subagents` directly from the parent agent when appropriate.
 
-Before delegating each distinct GSD subagent role, agents should call `gsd({ action: "resolve-model", agent: "<exact-gsd-agent-name>" })` and consume the returned `subagent` block. Pass `subagent.model` exactly when present; its suffix carries the routed thinking level and makes it visible in pi-subagents status. Omit `model` only when the consumer block says to omit it. Default routes still use the current parent model; configure `.pi-gsd/model-routing.json` with explicit tier or agent models when child roles should use different models.
+Before delegating each distinct GSD subagent role, agents should call `gsd({ action: "resolve-model", agent: "<exact-gsd-agent-name>" })` and obey the returned pi-subagents consumer action. `pass-model` means pass its exact suffixed `model`; `omit-model` means omit it; `resolve-first` means do not delegate until the route is corrected or the requested user choice is made. Default routes still use the current parent model. A warn-only `tool_call` validator checks the next GSD child launch against freshly resolved guidance without mutating or blocking pi-subagents.
 
 ### Upstream Pi plugin coexistence
 
@@ -198,10 +204,14 @@ npm install
 npm run check       # typecheck source and tests
 npm run build       # emit JS/declarations to dist/ for release validation
 npm test
-npm run test:live-pi  # optional: requires the `pi` CLI on PATH; no LLM API key required
+npm run test:live-pi       # no LLM API key required
+npm run test:live-subagent # skipped unless explicitly enabled; uses one parent/child model probe
+npm run release:check
 ```
 
-The test suite uses Node's built-in test runner with TypeScript stripping. `build` validates emitted artifacts even though Pi package metadata loads `src/extension/index.ts` directly during local development. `test:live-pi` starts Pi in RPC mode, loads this extension, and verifies live slash-command registration for representative `/gsd-*` commands.
+The test suite uses Node's built-in test runner with TypeScript stripping. `build` validates emitted artifacts even though Pi package metadata loads `src/extension/index.ts` directly during local development. `test:live-pi` starts the package-local Pi runtime in isolated RPC mode and verifies representative `/gsd-*` commands.
+
+The credential-bearing routing probe is deliberately opt-in and cost-bounded to one child. Set `PI_GSD_RUN_LIVE_SUBAGENT=1`, `PI_GSD_LIVE_MODEL=provider/model`, and `PI_GSD_LIVE_API_KEY_ENV` to the name of a non-empty credential environment variable before running `npm run test:live-subagent`. For a trusted local run only, `PI_GSD_LIVE_USE_EXISTING_AUTH=1` may use Pi's existing credential store instead. The probe verifies that the exact suffixed consumer model reaches pi-subagents status. Never run it on untrusted pull-request code.
 
 ## Troubleshooting
 

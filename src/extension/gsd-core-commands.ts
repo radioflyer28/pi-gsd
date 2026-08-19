@@ -147,7 +147,7 @@ function piExecutionGuidance(): string[] {
     "- Run every upstream GSD CLI operation (`gsd-tools`, `gsd_run`, or direct `node .../gsd-tools.cjs`) through pi-gsd: `gsd({ action: \"run\", args: [...] })` or `/gsd-run <args>`.",
     "- Never execute a bare `gsd-tools`/`gsd_run`, `command -v gsd-tools`, a global GSD install, a direct `node .../gsd-tools.cjs` command, or a runtime-home launch shim. Translate the upstream CLI example to its argument array while preserving its GSD semantics.",
     "- Use Pi chat/UI for upstream interactive prompts and call pi-subagents directly only when the parent agent independently chooses delegation.",
-    "- Before launching each distinct upstream GSD subagent role, call `gsd({ action: \"resolve-model\", agent: \"<exact-gsd-agent-name>\" })`. When its `subagent.model` is present, pass that exact value as the pi-subagents workflow/run `model` default; the suffix carries the routed thinking level and makes it visible in subagent status. Omit `model` only when the consumer block says to omit it.",
+    "- Before launching each distinct upstream GSD subagent role, call `gsd({ action: \"resolve-model\", agent: \"<exact-gsd-agent-name>\" })` and obey its pi-subagents consumer action: `pass-model` means pass the exact suffixed model, `omit-model` means omit it, and `resolve-first` means do not delegate yet.",
   ];
 }
 

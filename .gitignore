@@ -2,6 +2,7 @@ node_modules/
 dist/
 build/
 graphify-out/
+.pi/subagents/
 .pi-gsd/
 .DS_Store
 *.log

@@ -15,7 +15,21 @@ test("package metadata exposes the expected Pi package resources", () => {
 
   assert.equal(manifest.id, "pi-gsd");
   assert.deepEqual(manifest.provides.tools, ["gsd"]);
-  assert.deepEqual(manifest.provides.commands, ["gsd-status", "gsd-doctor", "gsd-run", "gsd-model", "gsd-init-config", "gsd-*"]);
+  assert.deepEqual(manifest.provides.commands, ["gsd-status", "gsd-doctor", "gsd-run", "gsd-model", "gsd-model-config", "gsd-init-config", "gsd-*"]);
+});
+
+test("release metadata stays aligned and package contents are allowlisted", () => {
+  const manifest = JSON.parse(readFileSync(path.resolve("extension-manifest.json"), "utf8"));
+  const pkg = JSON.parse(readFileSync(path.resolve("package.json"), "utf8"));
+  const lock = JSON.parse(readFileSync(path.resolve("package-lock.json"), "utf8"));
+
+  assert.equal(pkg.version, "0.2.0");
+  assert.equal(manifest.version, pkg.version);
+  assert.equal(lock.version, pkg.version);
+  assert.equal(lock.packages[""].version, pkg.version);
+  assert.equal(pkg.repository.url, "git+https://github.com/radioflyer28/pi-gsd.git");
+  assert.equal(pkg.homepage, "https://github.com/radioflyer28/pi-gsd#readme");
+  assert.deepEqual(pkg.files, ["src", "prompts", "docs", "README.md", "CHANGELOG.md", "LICENSE", "extension-manifest.json"]);
 });
 
 test("package metadata keeps GSD Core bundled and Pi packages external", () => {
@@ -41,4 +55,6 @@ test("package scripts use the built-in Node test runner and TypeScript compiler"
   assert.equal(pkg.scripts.check, "npm run typecheck && npm run typecheck:test");
   assert.equal(pkg.scripts.build, "tsc -p tsconfig.build.json");
   assert.equal(pkg.scripts["test:live-pi"], "node scripts/live-pi-rpc-smoke.mjs");
+  assert.equal(pkg.scripts["test:live-subagent"], "node scripts/live-subagent-routing-smoke.mjs");
+  assert.equal(pkg.scripts["release:check"], "node scripts/validate-release.mjs");
 });

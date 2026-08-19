@@ -10,6 +10,7 @@ import { Type } from "typebox";
 
 import { registerContextModeGuard } from "./context-mode-guard.ts";
 import { registerPiGsdCore } from "./register.ts";
+import { registerUpstreamSafetyGuard } from "./upstream-safety-guard.ts";
 
 const TOOL_PARAMS = Type.Object(
   {
@@ -76,4 +77,5 @@ export default function registerPiGsdExtension(pi: ExtensionAPI): void {
     truncateOutput: truncateForPiTool,
   });
   registerContextModeGuard(pi as Parameters<typeof registerContextModeGuard>[0]);
+  registerUpstreamSafetyGuard(pi as Parameters<typeof registerUpstreamSafetyGuard>[0]);
 }

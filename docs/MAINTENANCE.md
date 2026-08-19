@@ -163,11 +163,11 @@ GSD Core introduced its native Pi extension in v1.7 and continues to support Pi 
 - `pi-gsd` owns its provider-agnostic model routing, dynamic `/gsd-*` prompt commands, `gsd` tool, context-mode guardrails, and pi-subagents guidance.
 - The upstream plugin adds a separate `/gsd` command, `gsd_invoke` tool, lifecycle listeners, and its own model-steering policy. Loading both creates overlapping GSD surfaces and bypasses pi-gsd's routing policy.
 - The packaged plugin source remains `pi/gsd.cjs`, while the installer writes `extensions/gsd.js`, the suffix Pi discovers. Coexistence detection must recognize `gsd.js` and the legacy `gsd.cjs` path.
-- In v1.10.0 the upstream plugin stages its shared hook bundle under `gsd-hooks/` rather than Pi's reserved `hooks/` directory. This does not change pi-gsd's coexistence boundary: pi-gsd neither loads nor proxies the upstream plugin or its hooks.
+- In v1.10.0 the upstream plugin stages its shared hook bundle under `gsd-hooks/` rather than Pi's reserved `hooks/` directory. pi-gsd never loads that plugin. Its separate opt-in `safety.upstreamGuards` bridge invokes only the package dependency's `gsd-write-guard.js` and `gsd-worktree-path-guard.js`; all other official lifecycle listeners remain outside pi-gsd.
 - GSD Core labels `gsd-core/bin/lib/host-integration-sdk.cjs` as a public, protocol-versioned SDK surface. It still has no package `exports` map or complete in-process command-routing hub, and the upstream Pi plugin itself uses subprocess dispatch. Keep pi-gsd on the package-local binary seam unless a future exported API provides a clear advantage and passes live Pi validation.
 - The v1.10.0 MCP resource/prompt catalog belongs to the separate upstream `gsd-mcp-server` surface. Do not auto-register it from pi-gsd; pi-gsd's current command/tool adapter continues to use package-local `gsd-tools`.
 
-For this adapter, the verified v1.10.0 seams remain the package-local `gsd-tools` binary and flat `commands/gsd/*.md` directory (71 command files). Dynamic discovery exposes the full set without copied prompts. Normalize explicit `~/.claude/gsd-core` references in upstream prompt bodies to the package-local core root, including the `@` and `$HOME` spellings. Because current prompts also contain `gsd_run`, direct Node invocations, and multi-runtime launch shims, the injected Pi execution contract must tell the agent to translate all of those forms to the `gsd` tool or `/gsd-run`.
+For this adapter, the verified v1.10.0 seams remain the package-local `gsd-tools` binary and flat `commands/gsd/*.md` directory. Dynamic discovery exposes the full set without copied prompts; compatibility tests assert representative required commands and tolerate additive upstream commands rather than freezing the count. Normalize explicit `~/.claude/gsd-core` references in upstream prompt bodies to the package-local core root, including the `@` and `$HOME` spellings. Because current prompts also contain `gsd_run`, direct Node invocations, and multi-runtime launch shims, the injected Pi execution contract must tell the agent to translate all of those forms to the `gsd` tool or `/gsd-run`.
 
 ## context-mode compatibility
 
@@ -201,7 +201,8 @@ Check:
 - whether a registered or installed but inactive `subagent` tool is reported with reload/restart guidance;
 - whether filesystem fallback paths still match Pi's package layout;
 - whether `subagent({ action: "list" })` still works;
-- whether model delegation still accepts an optional `model` field;
+- whether model delegation still accepts an optional top-level `model` default with a thinking suffix;
+- whether `pass-model`, `omit-model`, and `resolve-first` guidance still maps cleanly to pi-subagents;
 - whether acceptance/review contracts changed in a way that affects pi-gsd guidance.
 
 The invariant is: `gsd` resolves model guidance, and the parent agent chooses whether to call pi-subagents directly. Do not make the `gsd` tool orchestrate subagents internally unless the project intentionally changes that design.
@@ -267,7 +268,10 @@ For runtime-facing changes, also run live Pi verification:
 
 ```bash
 npm run test:live-pi
+npm run test:live-subagent  # opt-in; skips unless PI_GSD_RUN_LIVE_SUBAGENT=1
 ```
+
+The credentialed probe additionally requires `PI_GSD_LIVE_MODEL`, `PI_GSD_LIVE_API_KEY_ENV`, and a non-empty credential in the named environment variable. It launches one child and must run only against trusted code. Weekly `.github/workflows/compatibility.yml` overlays latest Pi/GSD dependencies without changing the lockfile and exercises Linux, Windows, and macOS.
 
 In a live Pi session after reload/restart, verify:
 
@@ -286,7 +290,7 @@ If pi-subagents is installed, confirm the parent-agent flow still starts with:
 { "action": "list" }
 ```
 
-Then confirm pi-gsd model routing still returns a `pi-subagents consumer` section for GSD targets with explicit models.
+Then confirm pi-gsd model routing returns a `pi-subagents consumer` action, inherited routes produce exact suffixed models, and `error`/`prompt` routes return `resolve-first`.
 
 ## Release checklist
 
@@ -295,11 +299,12 @@ Before merging a maintenance update:
 - [ ] Runtime/package inventory captured.
 - [ ] Change classified by surface.
 - [ ] No boundary violations introduced.
-- [ ] Pi package metadata still valid.
+- [ ] Pi package, lockfile, extension manifest, and changelog versions agree (`npm run release:check`).
 - [ ] Optional integrations remain optional.
 - [ ] GSD Core remains package-local.
 - [ ] Tests pass.
-- [ ] Live Pi smoke passes for runtime-facing changes.
+- [ ] Live Pi smoke passes for runtime-facing changes; the credentialed child smoke passes before release when approved.
+- [ ] `npm pack --dry-run --json` contains only allowlisted release files.
 - [ ] README/docs updated if install, detection, commands, or guidance changed.
 - [ ] Any residual risk is written down.
 

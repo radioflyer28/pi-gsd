@@ -1,10 +1,14 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { once } from "node:events";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import * as path from "node:path";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const piPackageRoot = path.join(repoRoot, "node_modules", "@earendil-works", "pi-coding-agent");
+const piManifest = JSON.parse(readFileSync(path.join(piPackageRoot, "package.json"), "utf8"));
+const piEntrypoint = path.resolve(piPackageRoot, piManifest.bin.pi);
 const requiredCommands = [
   "gsd-status",
   "gsd-doctor",
@@ -27,11 +31,13 @@ function fail(message, details = "") {
 }
 
 const child = spawn(
-  "pi",
+  process.execPath,
   [
+    piEntrypoint,
     "--mode",
     "rpc",
     "--no-session",
+    "--no-extensions",
     "--no-builtin-tools",
     "--no-skills",
     "--no-prompt-templates",

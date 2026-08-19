@@ -11,14 +11,14 @@ When a GSD command is needed:
 1. Use the `gsd` tool with `action: "status"` or `action: "doctor"` to inspect the wrapper and GSD project records.
 2. Use `gsd` with `action: "run"` for thin dispatcher-backed calls to the package-local upstream `gsd-tools` installed with `pi-gsd`.
 3. Before launching each distinct GSD subagent role, use `gsd` with `action: "resolve-model"` and the exact upstream `agent` name.
-4. If `pi-subagents` is reported as available and the task is large, call `subagent({ action: "list" })` before selecting agents or chains. Consume the shared pi-gsd model-routing result: pass `subagent.model` exactly when present so its suffix applies and displays the routed thinking level; otherwise omit model only as instructed.
+4. If `pi-subagents` is reported as available and the task is large, call `subagent({ action: "list" })` before selecting agents or chains. Obey the shared consumer action: pass the exact suffixed model for `pass-model`, omit it for `omit-model`, and do not delegate for `resolve-first`.
 5. If `context-mode` is reported as available, use `ctx_execute`, `ctx_execute_file`, `ctx_search`, or indexing only when it materially reduces noisy context for the current GSD task.
 
 ## Boundaries
 
 - Use `.planning/` as the project-local GSD record-keeping directory for plans, decisions, phase artifacts, verification notes, and handoffs.
 - Do not put Pi-wrapper-specific material in `.planning/`; write there only when producing normal GSD-compatible records.
-- Do not create a Pi-wrapper project-state directory by default. Reserve `.pi-gsd/` only for future project-local adapter metadata that is concrete, documented, and fundamentally not a GSD-compatible `.planning/` record.
+- Reserve `.pi-gsd/` for documented project-local adapter configuration and opt-in diagnostics that are fundamentally not GSD-compatible `.planning/` records.
 - Do not create or assume `.gsd/`; that can conflict with other GSD-family tools.
 - Treat `.planning/` as the canonical GSD project record. Context-mode caches are supporting context, not durable GSD memory.
 - Do not index or cache GSD artifacts just because they exist. Read them directly when they are small and relevant.

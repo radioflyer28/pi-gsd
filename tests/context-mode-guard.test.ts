@@ -191,11 +191,11 @@ test("registered context-mode guard blocks through Pi tool_call hook and notifie
   assert.equal(notifications[0].level, "error");
 });
 
-test("default extension registers both the gsd tool and context-mode guard", () => {
+test("default extension registers gsd plus context, routing, and upstream safety guards", () => {
   const pi = mockPi();
 
   registerPiGsdExtension(pi.api as any);
 
   assert.equal(pi.tools[0].name, "gsd");
-  assert.equal(pi.handlers.get("tool_call")?.length, 1);
+  assert.equal(pi.handlers.get("tool_call")?.length, 3);
 });

@@ -9,6 +9,7 @@ import { getPiGsdDiagnosticSummary, type PiGsdDiagnosticSummary } from "./diagno
 import { inspectGsdCoreCommands, type GsdCoreCommandInspection } from "./gsd-core-commands.ts";
 import {
   DEFAULT_MODEL_ROUTING_CONFIG,
+  formatModelRoutingAudit,
   formatResolvedModelRouting,
   getModelRoutingConfigPath,
   modelRef,
@@ -48,6 +49,8 @@ export type GsdExecutionContext = {
   ui?: {
     notify?: (message: string, level?: "info" | "warning" | "error") => void;
     select?: (title: string, options: string[]) => Promise<string | undefined>;
+    confirm?: (title: string, message: string) => Promise<boolean>;
+    input?: (title: string, placeholder?: string) => Promise<string | undefined>;
   };
   model?: PiModelLike;
   modelRegistry?: PiModelRegistryLike;
@@ -55,6 +58,8 @@ export type GsdExecutionContext = {
 
 export type GsdCoreDiagnostics = {
   version?: string;
+  adapterVersion?: string;
+  piSdkVersion?: string;
   commandInspection: GsdCoreCommandInspection;
   binaryProbe?: {
     status: "healthy" | "failed" | "not-detected";
@@ -130,21 +135,26 @@ export function truncateTailText(
 }
 
 export function findExternalGsdSkillPaths(homeDir = os.homedir()): string[] {
-  const skillsDir = path.join(homeDir, ".pi", "agent", "skills");
-  let entries: fs.Dirent[];
-  try {
-    entries = fs.readdirSync(skillsDir, { withFileTypes: true });
-  } catch {
-    return [];
+  const skillRoots = [
+    path.join(homeDir, ".pi", "agent", "skills"),
+    path.join(homeDir, ".agents", "skills"),
+  ];
+  const paths: string[] = [];
+  for (const skillsDir of skillRoots) {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(skillsDir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    paths.push(...entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .filter((name) => name.startsWith("gsd-") && name !== "pi-gsd")
+      .map((name) => path.join(skillsDir, name, "SKILL.md"))
+      .filter((candidate) => fs.existsSync(candidate)));
   }
-
-  return entries
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .filter((name) => name.startsWith("gsd-") && name !== "pi-gsd")
-    .map((name) => path.join(skillsDir, name, "SKILL.md"))
-    .filter((candidate) => fs.existsSync(candidate))
-    .sort();
+  return [...new Set(paths)].sort();
 }
 
 function formatIntegrationStatus(
@@ -162,12 +172,16 @@ function formatIntegrationStatus(
           : provenance === "filesystem-inactive"
             ? "installed on disk but inactive (public tool is not active)"
             : "not detected";
+  const packageInfo = caps.integrationPackages[name];
+  const packageSuffix = packageInfo
+    ? `; package ${packageInfo.version ? `v${packageInfo.version} ` : ""}at ${packageInfo.path}`
+    : "";
   if (caps.integrationSettings[name] === "off") {
     return caps.detected[name]
-      ? `${detected}, disabled by ${caps.configPath}`
-      : `disabled by ${caps.configPath}`;
+      ? `${detected}, disabled by ${caps.configPath}${packageSuffix}`
+      : `disabled by ${caps.configPath}${packageSuffix}`;
   }
-  return caps[name] || caps.detected[name] ? detected : "not detected";
+  return caps[name] || caps.detected[name] ? `${detected}${packageSuffix}` : "not detected";
 }
 
 export function formatCapabilities(
@@ -193,6 +207,8 @@ export function formatCapabilities(
     "# pi-gsd status",
     "",
     `- CWD: \`${cwd}\``,
+    `- pi-gsd version: ${core?.adapterVersion ?? "unknown"}`,
+    `- Pi SDK compatibility version: ${core?.piSdkVersion ?? "unknown"}`,
     `- .planning present: ${exists(planningDir) ? "yes" : "no"}`,
     `- mode: \`${caps.mode}\``,
     `- active Pi tool inventory: ${caps.activeToolInventoryAvailable ? "available" : "unavailable; using filesystem fallbacks"}`,
@@ -203,6 +219,7 @@ export function formatCapabilities(
     `- pi-subagents: ${formatIntegrationStatus("subagents", caps)}`,
     `- context-mode: ${formatIntegrationStatus("contextMode", caps)}`,
     `- upstream GSD Pi plugin: ${upstreamStatus}`,
+    `- upstream safety guards: ${caps.safetySettings.upstreamGuards === "on" ? "enabled" : "off"}`,
     `- diagnostics log: ${diagnostics?.enabled ? `${diagnostics.entries} entr${diagnostics.entries === 1 ? "y" : "ies"} at ${diagnostics.path}` : "off"}`,
     `- current Pi model: ${currentModel ?? "unknown"}`,
     `- current Pi thinking: ${modelContext?.thinkingLevel ?? "unknown"}`,
@@ -211,20 +228,24 @@ export function formatCapabilities(
   ].join("\n");
 }
 
-function inspectGsdCore(packageRoot: string, exists: ExistsProbe): GsdCoreDiagnostics {
-  const manifestPath = path.join(packageRoot, "node_modules", "@opengsd", "gsd-core", "package.json");
-  let version: string | undefined;
+function readManifestVersion(manifestPath: string, exists: ExistsProbe): string | undefined {
   try {
-    if (exists(manifestPath)) {
-      const parsed = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as { version?: unknown };
-      if (typeof parsed.version === "string") version = parsed.version;
-    }
+    if (!exists(manifestPath)) return undefined;
+    const parsed = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as { version?: unknown };
+    return typeof parsed.version === "string" ? parsed.version : undefined;
   } catch {
-    // Discovery warnings are deliberately bounded; package metadata is optional diagnostic detail.
+    return undefined;
   }
+}
 
+function inspectGsdCore(packageRoot: string, exists: ExistsProbe): GsdCoreDiagnostics {
+  const version = readManifestVersion(path.join(packageRoot, "node_modules", "@opengsd", "gsd-core", "package.json"), exists);
+  const adapterVersion = readManifestVersion(path.join(packageRoot, "package.json"), exists);
+  const piSdkVersion = readManifestVersion(path.join(packageRoot, "node_modules", "@earendil-works", "pi-coding-agent", "package.json"), exists);
   return {
     ...(version ? { version } : {}),
+    ...(adapterVersion ? { adapterVersion } : {}),
+    ...(piSdkVersion ? { piSdkVersion } : {}),
     commandInspection: inspectGsdCoreCommands({ packageRoot, exists }),
   };
 }
@@ -287,6 +308,18 @@ function formatUpstreamPiPluginWarning(caps: Capabilities): string[] {
   ];
 }
 
+function formatLifecycleCompatibility(): string[] {
+  return [
+    "## Lifecycle compatibility",
+    "",
+    "- upstream canonical-path hook: intentionally not bridged; it repairs Claude marketplace `CLAUDE_PLUGIN_ROOT` installs and is a no-op for Pi package installs",
+    "- upstream context-monitor hook: intentionally not bridged; it reads Claude statusline temp files and emits only for PostToolUse/AfterTool, not Pi pre-compaction",
+    "- upstream workflow/tool hook placeholders: advisory and post-use bridges remain intentionally disabled until upstream provides a verified Pi event contract",
+    "- opt-in upstream hard guards: set `safety.upstreamGuards` to `on` to bridge only package-local write-shrink and GSD-worktree path blocks; adapter failures allow execution",
+    "- Pi-native lifecycle behavior: context-mode guardrails and the warn-only GSD subagent routing validator remain active without loading the official GSD Pi plugin",
+  ];
+}
+
 function formatDoctor(
   cwd: string,
   caps: Capabilities,
@@ -300,7 +333,7 @@ function formatDoctor(
     ...(caps.subagents
       ? [
           "- Use `subagent({ action: \"list\" })` before selecting pi-subagents agents or chains.",
-          "- Use the shared pi-gsd model-routing result as the model input for `subagent` when pi-subagents is detected and an explicit model is available.",
+          "- Resolve each distinct GSD agent role and pass the exact pi-subagents consumer `model` when its action is `pass-model`; inherited routes intentionally produce a suffixed launch snapshot too.",
           "- Do not make the `gsd` tool call `subagent` internally in v1.",
           "- Do not run nested subagents unless the selected subagent is explicitly intended to orchestrate.",
         ]
@@ -331,18 +364,23 @@ function formatDoctor(
     `- ${core.binaryProbe?.message ?? "Package-local gsd-tools was not probed."}`,
     ...(core.commandInspection.warnings.length > 0 ? core.commandInspection.warnings.map((warning) => `- command discovery: ${warning}`) : []),
     "",
+    formatModelRoutingAudit({ cwd, ...modelContext }),
+    "",
+    ...formatLifecycleCompatibility(),
+    "",
     "## Integration guidance",
     "",
     "- Use upstream `gsd-core` behavior through `gsd-tools`; do not fork or duplicate GSD Core semantics.",
     "- Resolve `gsd-tools` from this Pi package's installed `@opengsd/gsd-core` dependency; do not use system-wide GSD installs for Pi execution.",
     "- If `gsd-core` needs a better machine-readable dispatcher for Pi, contribute that seam upstream and swap only the pi-gsd dispatcher adapter.",
-    "- Use `gsd({ action: \"resolve-model\", agent: \"gsd-planner\" })` before choosing a model for GSD-specific work.",
+    "- Immediately before each distinct GSD child role, use `gsd({ action: \"resolve-model\", agent: \"<exact-agent-name>\" })` and obey its child consumer action.",
+    "- `/gsd-model` changes only the current Pi session; `/gsd-model-config` persists tier routes in `.pi-gsd/model-routing.json`.",
     "- Keep GSD Core `resolve_model_ids` omitted/inherited under Pi unless you intentionally configured a non-Pi GSD runtime.",
     ...integrationGuidance,
     "- Treat `.planning/` as the project-local GSD record-keeping directory.",
     "- Do not put Pi-wrapper-specific material in `.planning/`; only write GSD-compatible records there.",
     "- Do not create a Pi-wrapper project-state directory by default.",
-    "- Reserve `.pi-gsd/` only for future documented project-local adapter metadata that cannot be represented as a GSD-compatible `.planning/` record.",
+    "- Reserve `.pi-gsd/` for documented project-local adapter configuration and opt-in diagnostics that cannot be represented as GSD-compatible `.planning/` records.",
     "- Do not create or assume `.gsd/`; avoid colliding with other GSD-family tools.",
   ].join("\n");
 }

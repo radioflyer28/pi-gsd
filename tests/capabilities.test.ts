@@ -93,6 +93,32 @@ test("capability detection finds user-scoped Pi optional packages", () => {
   assert.equal(caps.paths.contextMode, contextModePath);
 });
 
+test("capability detection reports optional package versions separately from active tool evidence", () => {
+  const cwd = mkdtempSync(path.join(tmpdir(), "pi-gsd-capability-packages-"));
+  try {
+    const subagentsPath = path.join(cwd, "pi-subagents");
+    const contextModePath = path.join(cwd, "context-mode");
+    mkdirSync(subagentsPath);
+    mkdirSync(contextModePath);
+    writeFileSync(path.join(subagentsPath, "package.json"), JSON.stringify({ name: "pi-subagents", version: "0.51.0" }));
+    writeFileSync(path.join(contextModePath, "package.json"), JSON.stringify({ name: "context-mode", version: "1.2.3" }));
+
+    const caps = detectCapabilities({
+      cwd,
+      homeDir: path.resolve("home"),
+      packageRoot: path.resolve("pkg"),
+      activeToolNames: ["subagent", "ctx_execute"],
+      candidatePaths: { gsdCore: [], gsdTools: [], subagents: [subagentsPath], contextMode: [contextModePath] },
+    });
+
+    assert.equal(caps.paths.subagents, "<active-tool:subagent>");
+    assert.deepEqual(caps.integrationPackages.subagents, { path: subagentsPath, version: "0.51.0" });
+    assert.deepEqual(caps.integrationPackages.contextMode, { path: contextModePath, version: "1.2.3" });
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("capability detection finds project-local Pi optional packages", () => {
   const cwd = path.resolve("repo");
   const homeDir = path.resolve("home");

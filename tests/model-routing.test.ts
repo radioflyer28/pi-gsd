@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import * as path from "node:path";
 import test from "node:test";
 
-import { resolveModelRouting } from "../src/extension/model-routing.ts";
+import { formatModelRoutingAudit, formatResolvedModelRouting, resolveModelRouting } from "../src/extension/model-routing.ts";
 
 function withRoutingConfig(config: string | object, fn: (cwd: string) => void) {
   const cwd = mkdtempSync(path.join(tmpdir(), "pi-gsd-model-routing-"));
@@ -32,8 +32,9 @@ test("model routing surfaces invalid project config and falls back to defaults",
     assert.equal(resolved.model, "openai/current");
     assert.equal(resolved.thinking, "xhigh");
     assert.equal(resolved.recommendedAction.mode, "inherit-current");
+    assert.equal(resolved.subagent.action, "pass-model");
     assert.equal(resolved.subagent.model, "openai/current:xhigh");
-    assert.equal(resolved.subagent.thinking, "xhigh");
+    assert.equal("thinking" in resolved.subagent, false);
   });
 });
 
@@ -70,6 +71,10 @@ test("model routing supports fallback error for unavailable configured models", 
       assert.equal(resolved.model, null);
       assert.equal(resolved.available, false);
       assert.equal(resolved.recommendedAction.mode, "error");
+      assert.equal(resolved.subagent.action, "resolve-first");
+      assert.equal(resolved.subagent.model, undefined);
+      assert.match(resolved.subagent.note, /Do not delegate/);
+      assert.doesNotMatch(formatResolvedModelRouting(resolved), /omit model/i);
       assert.match(resolved.error ?? "", /openai\/missing/);
     },
   );
@@ -90,8 +95,113 @@ test("model routing supports fallback omit for unavailable configured models", (
       assert.equal(resolved.model, null);
       assert.equal(resolved.available, false);
       assert.equal(resolved.recommendedAction.mode, "omit-model");
+      assert.equal(resolved.subagent.action, "omit-model");
       assert.equal(resolved.subagent.model, undefined);
       assert.match(resolved.warnings.join("\n"), /omitting model/);
+    },
+  );
+});
+
+test("model routing blocks child launch until prompt fallback is selected", () => {
+  withRoutingConfig(
+    {
+      fallback: "prompt",
+      agents: { "gsd-planner": { model: "openai/missing", thinking: "high" } },
+    },
+    (cwd) => {
+      const resolved = resolveModelRouting(
+        { agent: "gsd-planner" },
+        { cwd, model: { provider: "openai", id: "current" }, modelRegistry: { getAvailable: () => [] } },
+      );
+      assert.equal(resolved.recommendedAction.mode, "prompt-user");
+      assert.equal(resolved.subagent.action, "resolve-first");
+      assert.match(resolved.subagent.note, /Do not delegate/);
+      assert.match(resolved.subagent.note, /\/gsd-model/);
+    },
+  );
+});
+
+test("empty available model inventory is authoritative over catalog and find", () => {
+  withRoutingConfig(
+    { agents: { "gsd-planner": { model: "openai/catalog-only" } } },
+    (cwd) => {
+      const catalogOnly = { provider: "openai", id: "catalog-only" };
+      const resolved = resolveModelRouting(
+        { agent: "gsd-planner" },
+        {
+          cwd,
+          model: { provider: "openai", id: "current" },
+          modelRegistry: {
+            getAvailable: () => [],
+            getAll: () => [catalogOnly],
+            find: () => catalogOnly,
+          },
+        },
+      );
+      assert.equal(resolved.recommendedAction.mode, "inherit-current");
+      assert.equal(resolved.model, "openai/current");
+      assert.match(resolved.warnings.join("\n"), /not available/);
+    },
+  );
+});
+
+test("missing available-model inventory treats configured child model as unverified", () => {
+  withRoutingConfig(
+    { agents: { "gsd-planner": { model: "openai/catalog", fallback: "inherit" } } },
+    (cwd) => {
+      const resolved = resolveModelRouting(
+        { agent: "gsd-planner" },
+        {
+          cwd,
+          model: { provider: "openai", id: "current" },
+          modelRegistry: { getAll: () => [{ provider: "openai", id: "catalog" }] },
+        },
+      );
+      assert.equal(resolved.model, "openai/current");
+      assert.equal(resolved.subagent.model, "openai/current:xhigh");
+      assert.match(resolved.warnings.join("\n"), /treated as unverified/);
+    },
+  );
+});
+
+test("inherit fallback stops child launch when there is no current Pi model", () => {
+  withRoutingConfig(
+    { agents: { "gsd-planner": { model: "openai/missing", fallback: "inherit" } } },
+    (cwd) => {
+      const resolved = resolveModelRouting(
+        { agent: "gsd-planner" },
+        { cwd, modelRegistry: { getAvailable: () => [] } },
+      );
+      assert.equal(resolved.recommendedAction.mode, "error");
+      assert.equal(resolved.subagent.action, "resolve-first");
+      assert.match(resolved.error ?? "", /no current Pi model/);
+    },
+  );
+});
+
+test("configured model suffix is normalized into the route thinking field", () => {
+  withRoutingConfig(
+    { agents: { "gsd-planner": { model: "openai/planner:max" } } },
+    (cwd) => {
+      const resolved = resolveModelRouting(
+        { agent: "gsd-planner" },
+        { cwd, modelRegistry: { getAvailable: () => [{ provider: "openai", id: "planner" }] } },
+      );
+      assert.equal(resolved.model, "openai/planner");
+      assert.equal(resolved.thinking, "max");
+      assert.equal(resolved.subagent.model, "openai/planner:max");
+    },
+  );
+});
+
+test("model routing audit names configured targets outside representative tiers", () => {
+  withRoutingConfig(
+    { agents: { "gsd-custom-reviewer": { model: "openai/missing", thinking: "low", fallback: "error" } } },
+    (cwd) => {
+      const audit = formatModelRoutingAudit({ cwd, modelRegistry: { getAvailable: () => [] } });
+      assert.match(audit, /configured target routes/);
+      assert.match(audit, /gsd-custom-reviewer/);
+      assert.match(audit, /resolve-first/);
     },
   );
 });

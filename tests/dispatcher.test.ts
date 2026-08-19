@@ -116,6 +116,7 @@ test("dispatcher init-config creates default .pi-gsd config files without overwr
 
     assert.match(result.text, /pi-gsd config initialized/);
     assert.equal(JSON.parse(readFileSync(configPath, "utf8")).integrations.subagents, "auto");
+    assert.equal(JSON.parse(readFileSync(configPath, "utf8")).safety.upstreamGuards, "off");
     assert.equal(JSON.parse(readFileSync(routingPath, "utf8")).tiers.heavy.thinking, "xhigh");
 
     writeFileSync(configPath, JSON.stringify({ integrations: { subagents: "off" } }));
@@ -155,6 +156,10 @@ test("dispatcher doctor includes integration and state-boundary guidance", async
   assert.match(result.text, /do not fork or duplicate GSD Core semantics/i);
   assert.match(result.text, /subagent\(\{ action: "list" \}\)/);
   assert.match(result.text, /ctx_execute/);
+  assert.match(result.text, /## Model routing audit/);
+  assert.match(result.text, /heavy \(gsd-planner\)/);
+  assert.match(result.text, /## Lifecycle compatibility/);
+  assert.match(result.text, /safety\.upstreamGuards/);
   assert.match(result.text, /Do not create or assume `\.gsd\/`/);
 });
 
@@ -207,8 +212,8 @@ test("dispatcher doctor reports package metadata, command discovery, and a bound
 
   const result = await dispatcher.doctor(process.cwd());
 
-  assert.match(result.text, /gsd-core version: 1\.10\.0/);
-  assert.match(result.text, /upstream command files: 71/);
+  assert.match(result.text, new RegExp(`gsd-core version: ${result.details.core?.version?.replaceAll(".", "\\.")}`));
+  assert.match(result.text, new RegExp(`upstream command files: ${result.details.core?.commandInspection.commands.length}`));
   assert.match(result.text, /Package-local gsd-tools --help completed/);
   assert.deepEqual(calls[0]?.[1], ["--help"]);
   assert.equal(result.details.core?.binaryProbe?.status, "healthy");
@@ -257,15 +262,21 @@ test("dispatcher doctor warns when external global gsd skills are present", asyn
 test("external GSD skill detector ignores pi-gsd and non-GSD skills", () => {
   const home = mkdtempSync(path.join(tmpdir(), "pi-gsd-skills-"));
   const skillsDir = path.join(home, ".pi", "agent", "skills");
+  const sharedSkillsDir = path.join(home, ".agents", "skills");
   mkdirSync(path.join(skillsDir, "gsd-plan-phase"), { recursive: true });
+  mkdirSync(path.join(sharedSkillsDir, "gsd-map-codebase"), { recursive: true });
   mkdirSync(path.join(skillsDir, "pi-gsd"), { recursive: true });
   mkdirSync(path.join(skillsDir, "review"), { recursive: true });
   writeFileSync(path.join(skillsDir, "gsd-plan-phase", "SKILL.md"), "---\nname: gsd-plan-phase\n---\n");
+  writeFileSync(path.join(sharedSkillsDir, "gsd-map-codebase", "SKILL.md"), "---\nname: gsd-map-codebase\n---\n");
   writeFileSync(path.join(skillsDir, "pi-gsd", "SKILL.md"), "---\nname: pi-gsd\n---\n");
   writeFileSync(path.join(skillsDir, "review", "SKILL.md"), "---\nname: review\n---\n");
 
   try {
-    assert.deepEqual(findExternalGsdSkillPaths(home), [path.join(skillsDir, "gsd-plan-phase", "SKILL.md")]);
+    assert.deepEqual(findExternalGsdSkillPaths(home), [
+      path.join(sharedSkillsDir, "gsd-map-codebase", "SKILL.md"),
+      path.join(skillsDir, "gsd-plan-phase", "SKILL.md"),
+    ].sort());
   } finally {
     rmSync(home, { recursive: true, force: true });
   }

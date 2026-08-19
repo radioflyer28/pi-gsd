@@ -3,6 +3,7 @@ import * as path from "node:path";
 
 export type IntegrationMode = "auto" | "off";
 export type DiagnosticsMode = "on" | "off";
+export type SafetyMode = "on" | "off";
 
 export type PiGsdConfig = {
   integrations: {
@@ -11,6 +12,9 @@ export type PiGsdConfig = {
   };
   diagnostics: {
     sessionLog: DiagnosticsMode;
+  };
+  safety: {
+    upstreamGuards: SafetyMode;
   };
 };
 
@@ -21,6 +25,9 @@ export const DEFAULT_PI_GSD_CONFIG: PiGsdConfig = {
   },
   diagnostics: {
     sessionLog: "off",
+  },
+  safety: {
+    upstreamGuards: "off",
   },
 };
 
@@ -36,9 +43,14 @@ function normalizeDiagnosticsMode(value: unknown): DiagnosticsMode {
   return value === "on" ? "on" : "off";
 }
 
+function normalizeSafetyMode(value: unknown): SafetyMode {
+  return value === "on" ? "on" : "off";
+}
+
 function normalizeConfig(value: unknown): PiGsdConfig {
   const integrations = isRecord(value) && isRecord(value.integrations) ? value.integrations : {};
   const diagnostics = isRecord(value) && isRecord(value.diagnostics) ? value.diagnostics : {};
+  const safety = isRecord(value) && isRecord(value.safety) ? value.safety : {};
   return {
     integrations: {
       subagents: normalizeIntegrationMode(integrations.subagents),
@@ -46,6 +58,9 @@ function normalizeConfig(value: unknown): PiGsdConfig {
     },
     diagnostics: {
       sessionLog: normalizeDiagnosticsMode(diagnostics.sessionLog),
+    },
+    safety: {
+      upstreamGuards: normalizeSafetyMode(safety.upstreamGuards),
     },
   };
 }
