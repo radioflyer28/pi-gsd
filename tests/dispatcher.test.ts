@@ -370,14 +370,20 @@ test("dispatcher run avoids shell launch for package-local Windows shims", async
   writeFileSync(shim, "placeholder");
   writeFileSync(path.join(coreDir, "package.json"), JSON.stringify({ bin: { "gsd-tools": "gsd-core/bin/gsd-tools.cjs" } }));
   writeFileSync(entrypoint, "console.log(JSON.stringify(process.argv.slice(2)))");
+  let piExecCalled = false;
   const dispatcher = createGsdDispatcher({
     gsdToolsCommand: shim,
     detect: () => capabilities("inline"),
+    exec: async () => {
+      piExecCalled = true;
+      throw new Error("spawn EINVAL");
+    },
   });
 
   try {
     const result = await dispatcher.run(["arg with spaces", "&", "|", "^caret", 'quote"value'], root);
 
+    assert.equal(piExecCalled, false);
     assert.match(result.text, /gsd-tools exited with 0/);
     assert.match(result.text, /\["arg with spaces","&","\|","\^caret","quote\\"value"\]/);
   } finally {

@@ -479,13 +479,23 @@ function packageLocalGsdToolsEntrypoint(command: string): string | null {
   }
 }
 
+function packageLocalWindowsShimEntrypoint(command: string): string | null {
+  if (!/\.(cmd|bat|ps1)$/i.test(command)) return null;
+  return packageLocalGsdToolsEntrypoint(command);
+}
+
 function resolveSpawnInvocation(command: string, args: string[]): { command: string; args: string[] } {
-  if (/\.(cmd|bat|ps1)$/i.test(command)) {
-    const entrypoint = packageLocalGsdToolsEntrypoint(command);
-    if (entrypoint) return { command: process.execPath, args: [entrypoint, ...args] };
-  }
+  const entrypoint = packageLocalWindowsShimEntrypoint(command);
+  if (entrypoint) return { command: process.execPath, args: [entrypoint, ...args] };
 
   return { command, args };
+}
+
+function selectExecutor(command: string, piExec?: PiExec): PiExec {
+  // Pi's generic executor cannot launch a Windows .cmd shim in every host. The
+  // package-local core entrypoint is a Node script, so bypass the host executor
+  // only for that shim and preserve pi.exec for every other invocation.
+  return packageLocalWindowsShimEntrypoint(command) ? execWithNodeSpawn : (piExec ?? execWithNodeSpawn);
 }
 
 async function execWithNodeSpawn(
@@ -569,7 +579,7 @@ export function createGsdDispatcher(options: GsdDispatcherOptions = {}): GsdDisp
       const resultDetails = details(cwd);
       const core = coreDiagnostics();
       const command = options.gsdToolsCommand ?? resultDetails.caps.paths.gsdTools;
-      core.binaryProbe = await probeGsdTools(options.exec ?? execWithNodeSpawn, command, cwd);
+      core.binaryProbe = await probeGsdTools(command ? selectExecutor(command, options.exec) : execWithNodeSpawn, command, cwd);
       const externalSkillPaths = (options.externalGsdSkillPaths ?? findExternalGsdSkillPaths)();
       const diagnostics = getPiGsdDiagnosticSummary(cwd);
       return {
@@ -622,7 +632,7 @@ export function createGsdDispatcher(options: GsdDispatcherOptions = {}): GsdDisp
         };
       }
 
-      const exec = options.exec ?? execWithNodeSpawn;
+      const exec = selectExecutor(command, options.exec);
       try {
         const result = await exec(command, args, { cwd, signal });
         return {
