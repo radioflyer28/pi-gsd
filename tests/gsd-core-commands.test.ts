@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import * as path from "node:path";
 import test from "node:test";
 
+import { parseSkillBlock } from "@earendil-works/pi-coding-agent";
+
 import { discoverGsdCoreCommands, expandGsdCoreCommandPrompt, inspectGsdCoreCommands } from "../src/extension/gsd-core-commands.ts";
 
 test("discovers multiple upstream command markdown files from a flat command directory", () => {
@@ -120,6 +122,36 @@ test("config command prompt expansion injects Pi config update requirements", ()
   assert.match(prompt, /GSD CLI operation \(`gsd-tools`, `gsd_run`, or direct `node \.\.\.\/gsd-tools\.cjs`\)/);
   assert.match(prompt, /Never execute a bare `gsd-tools`\/`gsd_run`/);
   assert.match(prompt, /direct `node \.\.\.\/gsd-tools\.cjs` command/);
+});
+
+test("command prompt expansion uses Pi's collapsible skill-block envelope", () => {
+  const commandPath = path.join(
+    "pkg",
+    "node_modules",
+    "@opengsd",
+    "gsd-core",
+    "commands",
+    "gsd",
+    "map-codebase.md",
+  );
+  const prompt = expandGsdCoreCommandPrompt(
+    {
+      slashName: "gsd-map-codebase",
+      coreName: "gsd:map-codebase",
+      description: "Map codebase",
+      path: commandPath,
+      body: "Map the repository with $ARGUMENTS",
+    },
+    "src",
+  );
+
+  const skillBlock = parseSkillBlock(prompt);
+  assert.ok(skillBlock, "Pi should recognize the expanded command as a collapsible skill invocation");
+  assert.equal(skillBlock.name, "gsd-map-codebase");
+  assert.equal(skillBlock.location, commandPath);
+  assert.equal(skillBlock.userMessage, undefined);
+  assert.match(skillBlock.content, /Execute upstream GSD Core command `gsd:map-codebase`/);
+  assert.match(skillBlock.content, /Map the repository with src/);
 });
 
 test("command prompt expansion preserves quoted arguments and rewrites package-local GSD Core references", () => {

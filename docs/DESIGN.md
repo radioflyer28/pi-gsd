@@ -46,6 +46,8 @@ The tool supports five actions:
 
 The command names are intentionally namespaced. Avoid adding broad names like `/status`, `/doctor`, or `/run`.
 
+Dynamic `/gsd-*` command prompts are sent inside Pi's native `<skill ...>` envelope. Pi therefore renders the expanded upstream workflow as a collapsed skill invocation by default and lets the user reveal it with the configured `app.tools.expand` binding (`Ctrl+O` by default). The full envelope remains in model context; this is a display-only optimization.
+
 ## Dispatcher boundary
 
 All GSD execution goes through a small dispatcher abstraction with these operations:

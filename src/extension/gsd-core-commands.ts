@@ -174,7 +174,7 @@ export function expandGsdCoreCommandPrompt(command: GsdCoreCommand, rawArgs: str
   body = body.replace(/\$(\d+)/g, (_match, index: string) => words[Number(index) - 1] ?? "");
   body = body.replace(/(@?)(?:~|\$HOME)\/\.claude\/gsd-core\//g, (_match, include: string) => `${include}${coreRoot}${path.sep}`);
 
-  return [
+  const content = [
     `Execute upstream GSD Core command \`${command.coreName}\` via pi-gsd.`,
     args ? `Arguments: ${args}` : "Arguments: <none>",
     `Package-local GSD Core root: ${coreRoot}`,
@@ -183,4 +183,8 @@ export function expandGsdCoreCommandPrompt(command: GsdCoreCommand, rawArgs: str
     "",
     body.trim(),
   ].join("\n");
+
+  // Use Pi's native skill-block envelope so the expanded command stays collapsed
+  // in chat until the user toggles tool output expansion (Ctrl+O by default).
+  return `<skill name="${command.slashName}" location="${command.path}">\n${content}\n</skill>`;
 }
