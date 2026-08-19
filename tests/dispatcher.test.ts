@@ -189,7 +189,7 @@ test("dispatcher doctor reports package metadata, command discovery, and a bound
 
   const result = await dispatcher.doctor(process.cwd());
 
-  assert.match(result.text, /gsd-core version: 1\.9\.1/);
+  assert.match(result.text, /gsd-core version: 1\.10\.0/);
   assert.match(result.text, /upstream command files: 71/);
   assert.match(result.text, /Package-local gsd-tools --help completed/);
   assert.deepEqual(calls[0]?.[1], ["--help"]);

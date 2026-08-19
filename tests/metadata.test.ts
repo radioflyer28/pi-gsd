@@ -21,7 +21,7 @@ test("package metadata exposes the expected Pi package resources", () => {
 test("package metadata keeps GSD Core bundled and Pi packages external", () => {
   const pkg = JSON.parse(readFileSync(path.resolve("package.json"), "utf8"));
 
-  assert.equal(pkg.dependencies["@opengsd/gsd-core"], "^1.9.1");
+  assert.equal(pkg.dependencies["@opengsd/gsd-core"], "^1.10.0");
   assert.equal(pkg.peerDependencies["@opengsd/gsd-core"], undefined);
   assert.equal(pkg.optionalDependencies, undefined);
 

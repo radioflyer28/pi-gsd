@@ -25,7 +25,7 @@ test("discovers multiple upstream command markdown files from a flat command dir
   assert.equal(commands[1].coreName, "gsd:verify-work");
 });
 
-test("bundled v1.9.1 GSD Core commands are exposed through dynamic discovery", () => {
+test("bundled v1.10.0 GSD Core commands are exposed through dynamic discovery", () => {
   const commands = discoverGsdCoreCommands();
   const slashNames = new Set(commands.map((command) => command.slashName));
 
@@ -35,7 +35,7 @@ test("bundled v1.9.1 GSD Core commands are exposed through dynamic discovery", (
   }
 });
 
-test("bundled v1.9.1 gsd-next resolves its workflow inside the package-local core", () => {
+test("bundled v1.10.0 gsd-next resolves its workflow inside the package-local core", () => {
   const command = discoverGsdCoreCommands().find(({ slashName }) => slashName === "gsd-next");
   assert.ok(command, "expected package-local gsd-next command");
 
