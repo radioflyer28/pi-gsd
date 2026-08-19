@@ -75,6 +75,18 @@ function activeToolInventory(pi: RegisterablePiApi): { names: string[]; availabl
   }
 }
 
+function registeredToolInventory(pi: RegisterablePiApi): { names: string[]; available: boolean } {
+  if (!pi.getAllTools) return { names: [], available: false };
+  try {
+    return {
+      names: pi.getAllTools().map((tool) => tool.name).filter((name): name is string => Boolean(name)),
+      available: true,
+    };
+  } catch {
+    return { names: [], available: false };
+  }
+}
+
 function activeCommandInventory(pi: RegisterablePiApi): { names: string[]; available: boolean } {
   if (!pi.getCommands) return { names: [], available: false };
   try {
@@ -105,6 +117,7 @@ function createRuntimeAwareDetector(
 ): (cwd: string) => Capabilities {
   return (cwd: string) => {
     const toolInventory = activeToolInventory(pi);
+    const allToolInventory = registeredToolInventory(pi);
     const commandInventory = activeCommandInventory(pi);
     return detectCapabilities({
       cwd,
@@ -112,6 +125,8 @@ function createRuntimeAwareDetector(
       packageRoot: options.packageRoot,
       activeToolNames: toolInventory.names,
       activeToolInventoryAvailable: toolInventory.available,
+      registeredToolNames: allToolInventory.names,
+      registeredToolInventoryAvailable: allToolInventory.available,
       activeCommandNames: commandInventory.names,
       activeCommandInventoryAvailable: commandInventory.available,
     });

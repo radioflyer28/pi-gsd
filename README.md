@@ -145,7 +145,7 @@ By default, `pi-gsd` auto-detects `context-mode` and `pi-subagents` when their t
 }
 ```
 
-Set either value to `"off"` to make `pi-gsd` treat that integration as unavailable. For example, `"subagents": "off"` keeps GSD workflows single-agent even if the `subagent` tool exists; `"contextMode": "off"` also makes pi-gsd's context-mode guard inert for that project. When Pi exposes an active-tool inventory, `pi-gsd` treats that runtime signal as authoritative and does not revive disabled tools from package files on disk.
+Set either value to `"off"` to make `pi-gsd` treat that integration as unavailable. For example, `"subagents": "off"` keeps GSD workflows single-agent even if the `subagent` tool exists; `"contextMode": "off"` also makes pi-gsd's context-mode guard inert for that project. When Pi exposes an active-tool inventory, `pi-gsd` treats that runtime signal as authoritative for availability. Registered-but-inactive tools and package files on disk are reported diagnostically, but they do not enable delegation or context-mode guidance until the public tool is active.
 
 ### Private diagnostics
 

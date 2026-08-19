@@ -10,7 +10,12 @@ export type CapabilityName = "gsdCore" | "gsdTools" | "subagents" | "contextMode
 export type GsdMode = "inline" | "ctx-inline" | "delegated" | "delegated-ctx";
 
 export type CapabilityPaths = Record<CapabilityName, string | null>;
-export type IntegrationProvenance = "active-tool" | "filesystem" | "not-detected";
+export type IntegrationProvenance =
+  | "active-tool"
+  | "registered-tool-inactive"
+  | "filesystem"
+  | "filesystem-inactive"
+  | "not-detected";
 
 export type Capabilities = {
   gsdCore: boolean;
@@ -50,6 +55,8 @@ export type CapabilityDetectionOptions = {
   candidatePaths?: Partial<Record<CapabilityName, string[]>>;
   activeToolNames?: string[];
   activeToolInventoryAvailable?: boolean;
+  registeredToolNames?: string[];
+  registeredToolInventoryAvailable?: boolean;
   activeCommandNames?: string[];
   activeCommandInventoryAvailable?: boolean;
 };
@@ -137,21 +144,38 @@ function firstActiveTool(activeToolNames: Set<string>, names: string[]): string 
 function detectOptionalIntegration(
   activeToolNames: Set<string>,
   activeToolInventoryAvailable: boolean,
+  registeredToolNames: Set<string>,
+  registeredToolInventoryAvailable: boolean,
   publicToolNames: string[],
   candidates: string[],
   exists: ExistsProbe,
-): { path: string | null; provenance: IntegrationProvenance } {
+): { path: string | null; provenance: IntegrationProvenance; available: boolean } {
+  const pathOnDisk = firstExisting(candidates, exists);
   if (activeToolInventoryAvailable) {
-    const toolName = firstActiveTool(activeToolNames, publicToolNames);
-    return toolName
-      ? { path: `<active-tool:${toolName}>`, provenance: "active-tool" }
-      : { path: null, provenance: "not-detected" };
+    const activeToolName = firstActiveTool(activeToolNames, publicToolNames);
+    if (activeToolName) {
+      return { path: `<active-tool:${activeToolName}>`, provenance: "active-tool", available: true };
+    }
+
+    const registeredToolName = registeredToolInventoryAvailable
+      ? firstActiveTool(registeredToolNames, publicToolNames)
+      : null;
+    if (registeredToolName) {
+      return {
+        path: `<registered-tool:${registeredToolName}>`,
+        provenance: "registered-tool-inactive",
+        available: false,
+      };
+    }
+
+    return pathOnDisk
+      ? { path: pathOnDisk, provenance: "filesystem-inactive", available: false }
+      : { path: null, provenance: "not-detected", available: false };
   }
 
-  const pathOnDisk = firstExisting(candidates, exists);
   return pathOnDisk
-    ? { path: pathOnDisk, provenance: "filesystem" }
-    : { path: null, provenance: "not-detected" };
+    ? { path: pathOnDisk, provenance: "filesystem", available: true }
+    : { path: null, provenance: "not-detected", available: false };
 }
 
 export function detectCapabilities(options: CapabilityDetectionOptions = {}): Capabilities {
@@ -171,11 +195,16 @@ export function detectCapabilities(options: CapabilityDetectionOptions = {}): Ca
   const integrationSettings = loadedConfig.config.integrations;
   const activeToolNames = new Set(options.activeToolNames ?? []);
   const activeToolInventoryAvailable = options.activeToolInventoryAvailable ?? options.activeToolNames !== undefined;
+  const registeredToolNames = new Set(options.registeredToolNames ?? []);
+  const registeredToolInventoryAvailable =
+    options.registeredToolInventoryAvailable ?? options.registeredToolNames !== undefined;
   const activeCommandNames = new Set(options.activeCommandNames ?? []);
   const activeCommandInventoryAvailable = options.activeCommandInventoryAvailable ?? options.activeCommandNames !== undefined;
   const subagents = detectOptionalIntegration(
     activeToolNames,
     activeToolInventoryAvailable,
+    registeredToolNames,
+    registeredToolInventoryAvailable,
     ["subagent"],
     candidates.subagents,
     exists,
@@ -183,6 +212,8 @@ export function detectCapabilities(options: CapabilityDetectionOptions = {}): Ca
   const contextMode = detectOptionalIntegration(
     activeToolNames,
     activeToolInventoryAvailable,
+    registeredToolNames,
+    registeredToolInventoryAvailable,
     ["ctx_execute", "ctx_execute_file", "ctx_search", "ctx_index", "ctx_batch_execute"],
     candidates.contextMode,
     exists,
@@ -197,8 +228,8 @@ export function detectCapabilities(options: CapabilityDetectionOptions = {}): Ca
 
   const detectedSubagents = Boolean(paths.subagents);
   const detectedContextMode = Boolean(paths.contextMode);
-  const hasSubagents = integrationSettings.subagents !== "off" && detectedSubagents;
-  const hasContextMode = integrationSettings.contextMode !== "off" && detectedContextMode;
+  const hasSubagents = integrationSettings.subagents !== "off" && subagents.available;
+  const hasContextMode = integrationSettings.contextMode !== "off" && contextMode.available;
   const mode: GsdMode =
     hasSubagents && hasContextMode
       ? "delegated-ctx"

@@ -73,7 +73,7 @@ The wrapper reports four modes:
 
 Detection prefers active Pi tool inventory when available. Public tools such as `ctx_execute` and `subagent` are stronger signals than files on disk because they prove the other Pi package is actually loaded. Status reports that provenance.
 
-When Pi exposes an active inventory, a missing public tool is authoritative: `pi-gsd` does not revive an inactive integration from stale package files. Filesystem probes remain only for runtimes that do not expose active inventory.
+When Pi exposes an active inventory, a missing public tool is authoritative for availability: `pi-gsd` does not enable an inactive integration from stale package files. It still inspects the registered-tool inventory and standard package paths so status/doctor can distinguish "not installed" from "installed or loaded but inactive" and recommend a reload. Filesystem evidence enables an integration only on runtimes that do not expose active inventory.
 
 Project-local `.pi-gsd/config.json` can mask optional integrations after detection:
 

@@ -177,6 +177,7 @@ Check:
 
 - whether the Pi package is installed and loaded;
 - whether active tool inventory includes `ctx_*` tools; when that inventory exists, do not treat stale package files as proof of availability;
+- whether registered-but-inactive tools and standard package paths are reported as inactive rather than available or wholly absent;
 - whether filesystem fallback paths still match Pi's package layout;
 - whether new `ctx_*` tools should be allowed, warned, or blocked by the guard.
 
@@ -197,6 +198,7 @@ pi-subagents is an optional Pi package. `pi-gsd` should detect it and provide gu
 Check:
 
 - whether active tool inventory still exposes `subagent`; when that inventory exists, do not treat stale package files as proof of availability;
+- whether a registered or installed but inactive `subagent` tool is reported with reload/restart guidance;
 - whether filesystem fallback paths still match Pi's package layout;
 - whether `subagent({ action: "list" })` still works;
 - whether model delegation still accepts an optional `model` field;
@@ -305,7 +307,7 @@ Before merging a maintenance update:
 
 ### Optional integration installed but not detected
 
-First check whether it is installed as a Pi package and loaded by Pi. Files under `node_modules` are not enough. If active tool inventory contains the public tool, detection should prefer that over filesystem probes.
+First check whether it is installed as a Pi package and loaded by Pi. Files under `node_modules` are not enough. If active tool inventory contains the public tool, detection should prefer that over filesystem probes. If the package or registered tool exists but the public tool is inactive, status/doctor should report that distinction and recommend `/reload` or a Pi restart without enabling the integration prematurely.
 
 ### `gsd-tools` not found
 

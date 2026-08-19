@@ -158,6 +158,24 @@ test("dispatcher doctor includes integration and state-boundary guidance", async
   assert.match(result.text, /Do not create or assume `\.gsd\/`/);
 });
 
+test("dispatcher doctor explains how to recover an installed but inactive pi-subagents tool", async () => {
+  const dispatcher = createGsdDispatcher({
+    detect: () =>
+      capabilities("inline", {
+        detected: { subagents: true },
+        provenance: { subagents: "filesystem-inactive" },
+        paths: { subagents: "/home/user/.pi/agent/npm/node_modules/pi-subagents" },
+      }),
+    externalGsdSkillPaths: () => [],
+  });
+
+  const result = await dispatcher.doctor(process.cwd());
+
+  assert.match(result.text, /pi-subagents: installed on disk but inactive/);
+  assert.match(result.text, /Run `\/reload` or restart Pi/);
+  assert.doesNotMatch(result.text, /Use `subagent\(\{ action: "list" \}\)`/);
+});
+
 test("dispatcher doctor omits optional integration guidance when integrations are disabled", async () => {
   const dispatcher = createGsdDispatcher({
     detect: () =>

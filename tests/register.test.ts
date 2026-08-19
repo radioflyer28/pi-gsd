@@ -187,7 +187,7 @@ test("registered detection uses active Pi tool inventory when available", async 
   assert.match(toolText(result), /pi-subagents: detected/);
 });
 
-test("runtime detection ignores configured-but-inactive optional tools", async () => {
+test("runtime detection reports registered-but-inactive optional tools without enabling them", async () => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-gsd-inactive-tools-"));
   const pi = mockPi(undefined, [{ name: "subagent" }, { name: "ctx_execute" }], []);
   registerPiGsdCore(pi.api, { parameters: {}, defaultCwd: cwd, gsdCoreCommands: [] });
@@ -195,8 +195,12 @@ test("runtime detection ignores configured-but-inactive optional tools", async (
   try {
     const result = await pi.tools[0].execute("call-1", { action: "status" }, undefined, undefined, { cwd });
     assert.equal(result.details.caps.mode, "inline");
-    assert.equal(result.details.caps.provenance.subagents, "not-detected");
-    assert.equal(result.details.caps.provenance.contextMode, "not-detected");
+    assert.equal(result.details.caps.detected.subagents, true);
+    assert.equal(result.details.caps.detected.contextMode, true);
+    assert.equal(result.details.caps.provenance.subagents, "registered-tool-inactive");
+    assert.equal(result.details.caps.provenance.contextMode, "registered-tool-inactive");
+    assert.match(toolText(result), /pi-subagents: loaded but inactive/);
+    assert.match(toolText(result), /context-mode: loaded but inactive/);
   } finally {
     fs.rmSync(cwd, { recursive: true, force: true });
   }

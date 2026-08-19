@@ -147,7 +147,7 @@ test("capability detection trusts active Pi tool inventory over filesystem probe
   assert.equal(caps.paths.contextMode, "<active-tool:ctx_execute>");
 });
 
-test("active Pi inventory does not revive disabled integrations from stale filesystem paths", () => {
+test("active Pi inventory reports filesystem integrations as installed but does not make inactive tools available", () => {
   const caps = detectCapabilities({
     cwd: path.resolve("repo"),
     homeDir: path.resolve("home"),
@@ -159,10 +159,38 @@ test("active Pi inventory does not revive disabled integrations from stale files
   });
 
   assert.equal(caps.mode, "inline");
-  assert.equal(caps.paths.subagents, null);
-  assert.equal(caps.paths.contextMode, null);
-  assert.equal(caps.provenance.subagents, "not-detected");
-  assert.equal(caps.provenance.contextMode, "not-detected");
+  assert.equal(caps.subagents, false);
+  assert.equal(caps.contextMode, false);
+  assert.equal(caps.detected.subagents, true);
+  assert.equal(caps.detected.contextMode, true);
+  assert.equal(caps.paths.subagents, "subagent");
+  assert.equal(caps.paths.contextMode, "context-mode");
+  assert.equal(caps.provenance.subagents, "filesystem-inactive");
+  assert.equal(caps.provenance.contextMode, "filesystem-inactive");
+});
+
+test("registered but inactive public tools are visible diagnostically without enabling integrations", () => {
+  const caps = detectCapabilities({
+    cwd: path.resolve("repo"),
+    homeDir: path.resolve("home"),
+    packageRoot: path.resolve("pkg"),
+    exists: () => false,
+    activeToolNames: [],
+    activeToolInventoryAvailable: true,
+    registeredToolNames: ["subagent", "ctx_execute"],
+    registeredToolInventoryAvailable: true,
+    candidatePaths: { gsdCore: [], gsdTools: [], subagents: [], contextMode: [] },
+  });
+
+  assert.equal(caps.mode, "inline");
+  assert.equal(caps.subagents, false);
+  assert.equal(caps.contextMode, false);
+  assert.equal(caps.detected.subagents, true);
+  assert.equal(caps.detected.contextMode, true);
+  assert.equal(caps.paths.subagents, "<registered-tool:subagent>");
+  assert.equal(caps.paths.contextMode, "<registered-tool:ctx_execute>");
+  assert.equal(caps.provenance.subagents, "registered-tool-inactive");
+  assert.equal(caps.provenance.contextMode, "registered-tool-inactive");
 });
 
 test("capability detection reports the upstream Pi plugin from active surfaces and current or legacy plugin paths", () => {

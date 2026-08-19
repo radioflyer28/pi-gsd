@@ -152,13 +152,22 @@ function formatIntegrationStatus(
   caps: Capabilities,
 ): string {
   const provenance = caps.provenance[name];
-  const detected = provenance === "active-tool" ? "detected via active tool" : provenance === "filesystem" ? "detected via filesystem fallback" : "not detected";
+  const detected =
+    provenance === "active-tool"
+      ? "detected via active tool"
+      : provenance === "registered-tool-inactive"
+        ? "loaded but inactive (public tool is registered but not active)"
+        : provenance === "filesystem"
+          ? "detected via filesystem fallback"
+          : provenance === "filesystem-inactive"
+            ? "installed on disk but inactive (public tool is not active)"
+            : "not detected";
   if (caps.integrationSettings[name] === "off") {
     return caps.detected[name]
       ? `${detected}, disabled by ${caps.configPath}`
       : `disabled by ${caps.configPath}`;
   }
-  return caps[name] ? detected : "not detected";
+  return caps[name] || caps.detected[name] ? detected : "not detected";
 }
 
 export function formatCapabilities(
@@ -294,6 +303,11 @@ function formatDoctor(
           "- Use the shared pi-gsd model-routing result as the model input for `subagent` when pi-subagents is detected and an explicit model is available.",
           "- Do not make the `gsd` tool call `subagent` internally in v1.",
           "- Do not run nested subagents unless the selected subagent is explicitly intended to orchestrate.",
+        ]
+      : []),
+    ...(caps.detected.subagents && !caps.subagents && caps.integrationSettings.subagents !== "off"
+      ? [
+          "- pi-subagents appears installed or loaded, but its public `subagent` tool is inactive in this session. Run `/reload` or restart Pi and confirm the package/tool is enabled before delegating.",
         ]
       : []),
     ...(caps.contextMode
