@@ -2,7 +2,7 @@
 
 `pi-gsd` is a thin [Pi](https://github.com/earendil-works/pi-coding-agent) package that exposes upstream `@opengsd/gsd-core` workflows inside Pi.
 
-It does **not** reimplement GSD. It registers a small Pi tool, slash commands, and guardrails that help Pi use GSD safely while keeping workflow behavior in upstream GSD Core. The v0.2.0 compatibility baseline is Pi 0.84.2, GSD Core 1.10.0, and pi-subagents 0.51.0.
+It does **not** reimplement GSD. It registers a small Pi tool, slash commands, and guardrails that help Pi use GSD safely while keeping workflow behavior in upstream GSD Core. The current compatibility baseline is Pi 0.87.1, GSD Core 1.15.0, and pi-subagents 0.51.0. GSD Core 1.15 requires Node.js 24 or newer.
 
 ## Why?
 - I want to use GSD inside Pi.
@@ -187,7 +187,7 @@ Before delegating each distinct GSD subagent role, agents should call `gsd({ act
 
 ### Upstream Pi plugin coexistence
 
-GSD Core v1.10.0 ships an installable native Pi plugin from `pi/gsd.cjs`; its installer writes the active extension as `~/.pi/agent/extensions/gsd.js` (older installs may leave `gsd.cjs`). `pi-gsd` intentionally does not load it: the upstream plugin exposes a separate `/gsd` command, `gsd_invoke` tool, lifecycle listeners, and independent model-routing behavior. Use either integration, not both; `pi-gsd` remains the provider-agnostic adapter with dynamic `/gsd-*` commands and Pi-native model routing. `/gsd-doctor` warns when it sees an active `/gsd` or `gsd_invoke` surface, or either current or legacy upstream plugin file.
+GSD Core v1.15.0 ships an installable native Pi plugin from `pi/gsd.cjs`; its installer writes the active extension as `~/.pi/agent/extensions/gsd.js` (older installs may leave `gsd.cjs`). `pi-gsd` intentionally does not load it: the upstream plugin exposes a separate `/gsd` command, `gsd_invoke` tool, lifecycle listeners, and independent model-routing behavior. Use either integration, not both; `pi-gsd` remains the provider-agnostic adapter with dynamic `/gsd-*` commands and Pi-native model routing. `/gsd-doctor` warns when it sees an active `/gsd` or `gsd_invoke` surface, or either current or legacy upstream plugin file.
 
 ## State boundary
 

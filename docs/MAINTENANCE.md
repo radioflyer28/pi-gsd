@@ -156,18 +156,18 @@ When testing a newer GSD Core release, verify:
 
 Do not adapt by copying upstream command prompts. If GSD Core moves its command directory or binary seam, update the discovery/dispatcher seam only.
 
-### v1.10.0 Pi-integration ownership
+### v1.15.0 Pi-integration ownership
 
-GSD Core introduced its native Pi extension in v1.7 and continues to support Pi as a first-class installable runtime in v1.10.0. `pi-gsd` remains the authoritative Pi adapter rather than auto-loading that extension:
+GSD Core introduced its native Pi extension in v1.7 and continues to support Pi as a first-class installable runtime in v1.15.0. `pi-gsd` remains the authoritative Pi adapter rather than auto-loading that extension:
 
 - `pi-gsd` owns its provider-agnostic model routing, dynamic `/gsd-*` prompt commands, `gsd` tool, context-mode guardrails, and pi-subagents guidance.
 - The upstream plugin adds a separate `/gsd` command, `gsd_invoke` tool, lifecycle listeners, and its own model-steering policy. Loading both creates overlapping GSD surfaces and bypasses pi-gsd's routing policy.
 - The packaged plugin source remains `pi/gsd.cjs`, while the installer writes `extensions/gsd.js`, the suffix Pi discovers. Coexistence detection must recognize `gsd.js` and the legacy `gsd.cjs` path.
-- In v1.10.0 the upstream plugin stages its shared hook bundle under `gsd-hooks/` rather than Pi's reserved `hooks/` directory. pi-gsd never loads that plugin. Its separate opt-in `safety.upstreamGuards` bridge invokes only the package dependency's `gsd-write-guard.js` and `gsd-worktree-path-guard.js`; all other official lifecycle listeners remain outside pi-gsd.
+- In v1.15.0 the upstream plugin stages its shared hook bundle under `gsd-hooks/` rather than Pi's reserved `hooks/` directory. pi-gsd never loads that plugin. Its separate opt-in `safety.upstreamGuards` bridge invokes only the package dependency's `gsd-write-guard.js` and `gsd-worktree-path-guard.js`; all other official lifecycle listeners remain outside pi-gsd.
 - GSD Core labels `gsd-core/bin/lib/host-integration-sdk.cjs` as a public, protocol-versioned SDK surface. It still has no package `exports` map or complete in-process command-routing hub, and the upstream Pi plugin itself uses subprocess dispatch. Keep pi-gsd on the package-local binary seam unless a future exported API provides a clear advantage and passes live Pi validation.
-- The v1.10.0 MCP resource/prompt catalog belongs to the separate upstream `gsd-mcp-server` surface. Do not auto-register it from pi-gsd; pi-gsd's current command/tool adapter continues to use package-local `gsd-tools`.
+- The v1.15.0 MCP resource/prompt catalog belongs to the separate upstream `gsd-mcp-server` surface. Do not auto-register it from pi-gsd; pi-gsd's current command/tool adapter continues to use package-local `gsd-tools`.
 
-For this adapter, the verified v1.10.0 seams remain the package-local `gsd-tools` binary and flat `commands/gsd/*.md` directory. Dynamic discovery exposes the full set without copied prompts; compatibility tests assert representative required commands and tolerate additive upstream commands rather than freezing the count. Normalize explicit `~/.claude/gsd-core` references in upstream prompt bodies to the package-local core root, including the `@` and `$HOME` spellings. Because current prompts also contain `gsd_run`, direct Node invocations, and multi-runtime launch shims, the injected Pi execution contract must tell the agent to translate all of those forms to the `gsd` tool or `/gsd-run`.
+For this adapter, the verified v1.15.0 seams remain the package-local `gsd-tools` binary and flat `commands/gsd/*.md` directory. Dynamic discovery exposes the full set without copied prompts; compatibility tests assert representative required commands and tolerate additive upstream commands rather than freezing the count. Normalize explicit `~/.claude/gsd-core` references in upstream prompt bodies to the package-local core root, including the `@` and `$HOME` spellings. Because current prompts also contain `gsd_run`, direct Node invocations, and multi-runtime launch shims, the injected Pi execution contract must tell the agent to translate all of those forms to the `gsd` tool or `/gsd-run`.
 
 ## context-mode compatibility
 

@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+### Changed
+
+- Updated the compatibility baseline to Pi 0.87.1 and bundled GSD Core 1.15.0, with Node.js 24 or newer required by GSD Core.
+
 ## [0.2.0] - 2026-08-19
 
 ### Added

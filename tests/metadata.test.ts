@@ -35,7 +35,8 @@ test("release metadata stays aligned and package contents are allowlisted", () =
 test("package metadata keeps GSD Core bundled and Pi packages external", () => {
   const pkg = JSON.parse(readFileSync(path.resolve("package.json"), "utf8"));
 
-  assert.equal(pkg.dependencies["@opengsd/gsd-core"], "^1.10.0");
+  assert.equal(pkg.dependencies["@opengsd/gsd-core"], "^1.15.0");
+  assert.equal(pkg.engines.node, ">=24.0.0");
   assert.equal(pkg.peerDependencies["@opengsd/gsd-core"], undefined);
   assert.equal(pkg.optionalDependencies, undefined);
 
