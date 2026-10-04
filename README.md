@@ -2,7 +2,7 @@
 
 `pi-gsd` is a thin [Pi](https://github.com/earendil-works/pi-coding-agent) package that exposes upstream `@opengsd/gsd-core` workflows inside Pi.
 
-It does **not** reimplement GSD. It registers a small Pi tool, slash commands, and guardrails that help Pi use GSD safely while keeping workflow behavior in upstream GSD Core. The current compatibility baseline is Pi 0.87.1, GSD Core 1.15.0, and pi-subagents 0.51.0. GSD Core 1.15 requires Node.js 24 or newer.
+It does **not** reimplement GSD. It registers a small Pi tool, slash commands, and guardrails that help Pi use GSD safely while keeping workflow behavior in upstream GSD Core. Pi 1.0.0 or newer is required; the development lockfile uses Pi 1.0.1. The bundled GSD Core dependency is 1.15.0 (the latest stable release at the compatibility refresh), which requires Node.js 24 or newer. pi-subagents remains an optional, separately installed Pi package.
 
 ## Why?
 - I want to use GSD inside Pi.

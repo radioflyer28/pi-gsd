@@ -6,7 +6,9 @@ All notable changes to this project are documented here.
 
 ### Changed
 
-- Updated the compatibility baseline to Pi 0.87.1 and bundled GSD Core 1.15.0, with Node.js 24 or newer required by GSD Core.
+- Require Pi coding-agent and pi-ai peers >=1.0.0; refresh the development lockfile to Pi 1.0.1, including its brace-expansion security fix. Pi remains host-provided rather than a bundled runtime dependency.
+- Confirmed bundled GSD Core 1.15.0 is still the latest stable npm release; retain the ^1.15.0 dependency and Node.js >=24 requirement.
+- Leave the optional, separately installed pi-subagents fork unchanged.
 
 ## [0.2.0] - 2026-08-19
 

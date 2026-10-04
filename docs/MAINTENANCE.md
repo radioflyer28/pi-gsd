@@ -109,7 +109,8 @@ If Pi changed only by adding fields or events, no `pi-gsd` change is usually req
 
 Confirm the package manifest still follows Pi package rules:
 
-- Pi core packages stay in peer dependencies with wildcard ranges.
+- Pi core packages stay in peer dependencies, never bundled runtime dependencies. pi-gsd requires `@earendil-works/pi-coding-agent` and `@earendil-works/pi-ai` >=1.0.0; `typebox` retains its wildcard peer range.
+- The lockfile records the tested development install, not a second Pi runtime to ship. Test the declared minimum as well as the locked/latest version when raising compatibility requirements.
 - Runtime dependencies used by `pi-gsd` itself stay in dependencies.
 - context-mode and pi-subagents are not dependencies of `pi-gsd`.
 - Pi resources are declared under the `pi` manifest.

@@ -42,8 +42,15 @@ test("package metadata keeps GSD Core bundled and Pi packages external", () => {
 
   assert.equal(pkg.dependencies["context-mode"], undefined);
   assert.equal(pkg.dependencies["pi-subagents"], undefined);
-  assert.equal(pkg.peerDependencies["@earendil-works/pi-coding-agent"], "*");
-  assert.equal(pkg.peerDependencies["@earendil-works/pi-ai"], "*");
+  const lock = JSON.parse(readFileSync(path.resolve("package-lock.json"), "utf8"));
+  for (const peer of ["@earendil-works/pi-coding-agent", "@earendil-works/pi-ai"]) {
+    assert.equal(pkg.peerDependencies[peer], ">=1.0.0");
+    assert.equal(lock.packages[""].peerDependencies[peer], pkg.peerDependencies[peer]);
+    assert.equal(pkg.dependencies[peer], undefined);
+    assert.equal(pkg.devDependencies[peer], undefined);
+    assert.ok(Number(lock.packages[`node_modules/${peer}`].version.split(".")[0]) >= 1);
+  }
+  assert.equal(lock.packages[""].dependencies["@opengsd/gsd-core"], pkg.dependencies["@opengsd/gsd-core"]);
   assert.equal(pkg.peerDependencies.typebox, "*");
 });
 
