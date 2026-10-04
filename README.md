@@ -110,6 +110,12 @@ Pi is provider/runtime agnostic, so `pi-gsd` keeps GSD Core model IDs omitted/in
 
 Optional project-local routing lives in `.pi-gsd/model-routing.json`. If no route is configured, `pi-gsd` inherits the current Pi model and applies tier-based thinking defaults. For pi-subagents, the consumer block snapshots that inherited model and appends the thinking suffix (for example, `openai-codex/gpt-5.6-sol:medium`) because pi-subagents cannot apply or display a per-run thinking level separately from a model override.
 
+Agent tiers are read from the package-local GSD Core catalog, so newly added upstream roles do not require a copied role map. Missing or invalid catalog metadata is reported and leaves the role's tier unknown; explicit routes and default inheritance remain available. The effective upstream model-profile aliases (such as `sonnet`) are not used as routing tiers.
+
+Valid unversioned/version-1 policies retain legacy routing. Opt into stricter physical routing with `"version": 2`: model references must be provider-qualified, unknown fields are errors, unavailable targets default to `fallback: "error"`, and every launch requires a currently available physical model. Virtual aliases, omitted child defaults and unverifiable inheritance return `resolve-first`. Unreadable/malformed policy files block delegation in either format; a missing file still uses defaults.
+
+Resolution reports policy path, content revision, catalog version/status and pin metadata. Explicit role-model assignments are pins by default; a version-2 role may explicitly use `"locked": false` to permit future task overrides. This is not a launch-enforcement boundary: the existing launch validator remains warn-only. Coordinator overrides and virtual model registration are **not implemented yet**—enabling `taskOverrides` or `virtualModels` is rejected. A `coordinator` route is reserved/stored with a warning and does not switch the parent. See the [routing plan](docs/MODEL-ROUTING-PLAN.md) and [compatibility evidence](docs/ROUTING-COMPATIBILITY-SPIKE.md).
+
 Use `/gsd-model agent gsd-planner` to explicitly switch the current Pi session model/thinking level when the route resolves to an available configured model. It does not persist configuration or arm child routing. Use `/gsd-model-config heavy`, `standard`, or `light` to select an available provider-qualified model, thinking level, and fallback policy and save it to `.pi-gsd/model-routing.json`. Set `fallback: "prompt"` to require a user choice before delegation when a configured model is unavailable; chosen `/gsd-model` fallbacks are remembered per target for the current extension session.
 
 ### Run upstream GSD Core
@@ -233,6 +239,8 @@ Run `/reload` after editing extension code, or restart Pi. Local package install
 ## More documentation
 
 - [Design notes](docs/DESIGN.md)
+- [Coordinator-directed model routing implementation plan](docs/MODEL-ROUTING-PLAN.md) — physical policy foundation plus independently gated later features
+- [Routing compatibility spike](docs/ROUTING-COMPATIBILITY-SPIKE.md) — reproducible evidence, supported boundaries and upstream blockers
 - [Usage guide](docs/USAGE.md)
 - [Maintenance and compatibility playbook](docs/MAINTENANCE.md)
 - [Upstream Pi-integration proposals](docs/UPSTREAM-PROPOSALS.md)

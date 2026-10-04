@@ -9,6 +9,13 @@ All notable changes to this project are documented here.
 - Require Pi coding-agent and pi-ai peers >=1.0.0; refresh the development lockfile to Pi 1.0.1, including its brace-expansion security fix. Pi remains host-provided rather than a bundled runtime dependency.
 - Confirmed bundled GSD Core 1.15.0 is still the latest stable npm release; retain the ^1.15.0 dependency and Node.js >=24 requirement.
 - Leave the optional, separately installed pi-subagents fork unchanged.
+- Read agent routing tiers from the installed GSD Core catalog instead of a copied role roster; report unavailable/invalid metadata without inventing a cheap tier.
+- Block delegation on unreadable or malformed routing policies rather than silently reverting to defaults. Valid legacy policies retain their existing routing/fallback behavior.
+
+### Added
+
+- An audited implementation plan and reproducible, no-model-call compatibility spike for coordinator-selected task tiers, optional Pi virtual models and GSD-owned wave/worktree integration. Virtual children and parallel writing remain gated; no installed fork or upstream registry is patched.
+- A strict opt-in version-2 physical routing policy foundation, with provider-qualified references, role-pin metadata, fail-closed physical-model eligibility, config content revisions and catalog provenance. Task-override and virtual-routing enablement is rejected until those features are implemented.
 
 ## [0.2.0] - 2026-08-19
 

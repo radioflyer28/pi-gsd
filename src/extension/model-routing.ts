@@ -1,5 +1,9 @@
+import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+
+import { loadAgentRoutingCatalog, type AgentRoutingCatalog } from "./agent-routing-catalog.ts";
+import { selectModelRoutingPolicy, validateModelRoutingPolicy } from "./model-routing-policy.ts";
 
 export type ThinkingLevel = "inherit" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 export type ModelFallback = "inherit" | "omit" | "error" | "prompt";
@@ -11,21 +15,27 @@ export type ModelRoute = {
   thinking?: ThinkingLevel;
   tier?: RoutingTier;
   fallback?: ModelFallback;
+  locked?: boolean;
 };
 
 export type ModelRoutingConfig = {
+  version?: 1 | 2;
   fallback?: ModelFallback;
   default?: ModelRoute;
   tiers?: Partial<Record<RoutingTier, ModelRoute>>;
   agents?: Record<string, ModelRoute>;
   skills?: Record<string, ModelRoute>;
   commands?: Record<string, ModelRoute>;
+  coordinator?: ModelRoute;
+  taskOverrides?: { enabled?: boolean; allowedTiers?: RoutingTier[] };
+  virtualModels?: { enabled?: boolean };
 };
 
 export type PiModelLike = {
   provider?: string;
   id?: string;
   name?: string;
+  api?: string;
 };
 
 export type PiModelRegistryLike = {
@@ -40,6 +50,8 @@ export type ModelRoutingContext = {
   modelRegistry?: PiModelRegistryLike;
   thinkingLevel?: Exclude<ThinkingLevel, "inherit">;
   sessionModelOverrides?: Record<string, string>;
+  /** Adapter package root, not the project cwd; injectable for compatibility tests. */
+  packageRoot?: string;
 };
 
 export type ResolveModelRoutingRequest = {
@@ -60,6 +72,16 @@ export type ResolvedModelRouting = {
   available: boolean;
   fallback: ModelFallback;
   source: string;
+  pinned: boolean;
+  provenance: {
+    configPath: string;
+    configRevision: string | null;
+    configVersion: 1 | 2 | null;
+    configStatus: "loaded" | "default" | "invalid";
+    catalogPath: string;
+    catalogVersion: string | null;
+    catalogStatus: AgentRoutingCatalog["status"];
+  };
   warnings: string[];
   error?: string;
   subagent: {
@@ -83,44 +105,6 @@ export const DEFAULT_MODEL_ROUTING_CONFIG: ModelRoutingConfig = {
     standard: { model: "inherit", thinking: "high" },
     light: { model: "inherit", thinking: "medium" },
   },
-};
-
-const DEFAULT_AGENT_TIERS: Record<string, RoutingTier> = {
-  "gsd-planner": "heavy",
-  "gsd-roadmapper": "heavy",
-  "gsd-eval-planner": "heavy",
-  "gsd-framework-selector": "heavy",
-  "gsd-debugger": "heavy",
-  "gsd-debug-session-manager": "heavy",
-  "gsd-security-auditor": "heavy",
-  "gsd-user-profiler": "heavy",
-  "gsd-assumptions-analyzer": "heavy",
-
-  "gsd-executor": "standard",
-  "gsd-code-fixer": "standard",
-  "gsd-code-reviewer": "standard",
-  "gsd-verifier": "standard",
-  "gsd-phase-researcher": "standard",
-  "gsd-project-researcher": "standard",
-  "gsd-ui-researcher": "standard",
-  "gsd-advisor-researcher": "standard",
-  "gsd-ai-researcher": "standard",
-  "gsd-doc-writer": "standard",
-  "gsd-doc-synthesizer": "standard",
-  "gsd-domain-researcher": "standard",
-  "gsd-eval-auditor": "standard",
-
-  "gsd-plan-checker": "light",
-  "gsd-integration-checker": "light",
-  "gsd-nyquist-auditor": "light",
-  "gsd-pattern-mapper": "light",
-  "gsd-ui-checker": "light",
-  "gsd-ui-auditor": "light",
-  "gsd-doc-verifier": "light",
-  "gsd-doc-classifier": "light",
-  "gsd-codebase-mapper": "light",
-  "gsd-intel-updater": "light",
-  "gsd-research-synthesizer": "light",
 };
 
 const DEFAULT_SKILL_TIERS: Record<string, RoutingTier> = {
@@ -183,12 +167,13 @@ function normalizeRoute(value: unknown): ModelRoute {
   if (tier) route.tier = tier;
   const fallback = normalizeFallback(value.fallback);
   if (fallback) route.fallback = fallback;
+  if (typeof value.locked === "boolean") route.locked = value.locked;
   return route;
 }
 
 function normalizeRouteMap(value: unknown): Record<string, ModelRoute> | undefined {
   if (!isRecord(value)) return undefined;
-  const out: Record<string, ModelRoute> = {};
+  const out: Record<string, ModelRoute> = Object.create(null);
   for (const [key, route] of Object.entries(value)) out[key] = normalizeRoute(route);
   return out;
 }
@@ -205,12 +190,16 @@ function normalizeTierMap(value: unknown): Partial<Record<RoutingTier, ModelRout
 function normalizeConfig(value: unknown): ModelRoutingConfig {
   if (!isRecord(value)) return {};
   return {
+    version: value.version === 2 ? 2 : 1,
     fallback: normalizeFallback(value.fallback),
     default: normalizeRoute(value.default),
     tiers: normalizeTierMap(value.tiers),
     agents: normalizeRouteMap(value.agents),
     skills: normalizeRouteMap(value.skills),
     commands: normalizeRouteMap(value.commands),
+    coordinator: value.coordinator === undefined ? undefined : normalizeRoute(value.coordinator),
+    taskOverrides: value.taskOverrides as ModelRoutingConfig["taskOverrides"],
+    virtualModels: value.virtualModels as ModelRoutingConfig["virtualModels"],
   };
 }
 
@@ -219,24 +208,34 @@ function mergeRoute(base?: ModelRoute, override?: ModelRoute): ModelRoute {
 }
 
 export function getModelRoutingConfigPath(cwd: string): string {
-  return path.join(cwd, ".pi-gsd", "model-routing.json");
+  return path.resolve(cwd, ".pi-gsd", "model-routing.json");
 }
 
-export function loadModelRoutingConfig(cwd: string): { config: ModelRoutingConfig; path: string; warnings: string[] } {
+export function loadModelRoutingConfig(cwd: string): { config: ModelRoutingConfig; path: string; revision: string | null; warnings: string[]; error?: string } {
   const configPath = getModelRoutingConfigPath(cwd);
   const warnings: string[] = [];
   let userConfig: ModelRoutingConfig = {};
+  let error: string | undefined;
+  let revision: string | null = null;
 
   try {
-    if (fs.existsSync(configPath)) {
-      userConfig = normalizeConfig(JSON.parse(fs.readFileSync(configPath, "utf8")));
+    if (fs.statSync(configPath).size > 256 * 1024) throw new Error("routing policy exceeds 256 KiB");
+    const text = fs.readFileSync(configPath, "utf8");
+    revision = createHash("sha256").update(text).digest("hex");
+    const parsed: unknown = JSON.parse(text);
+    validateModelRoutingPolicy(parsed);
+    userConfig = normalizeConfig(parsed);
+    if (userConfig.coordinator) warnings.push("The coordinator policy is stored for a later slice; it does not switch the current Pi session or register a virtual model.");
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code !== "ENOENT") {
+      error = `Failed to read ${configPath}: ${cause instanceof SyntaxError ? "invalid JSON" : cause instanceof Error ? cause.message : "invalid policy"}. Correct the routing policy before delegation.`;
+      warnings.push(error);
     }
-  } catch (error) {
-    warnings.push(`Failed to read ${configPath}: ${error instanceof Error ? error.message : String(error)}. Using defaults.`);
   }
 
   const config: ModelRoutingConfig = {
-    fallback: userConfig.fallback ?? DEFAULT_MODEL_ROUTING_CONFIG.fallback,
+    version: userConfig.version ?? 1,
+    fallback: userConfig.fallback ?? (userConfig.version === 2 ? "error" : DEFAULT_MODEL_ROUTING_CONFIG.fallback),
     default: mergeRoute(DEFAULT_MODEL_ROUTING_CONFIG.default, userConfig.default),
     tiers: {
       heavy: mergeRoute(DEFAULT_MODEL_ROUTING_CONFIG.tiers?.heavy, userConfig.tiers?.heavy),
@@ -246,9 +245,12 @@ export function loadModelRoutingConfig(cwd: string): { config: ModelRoutingConfi
     agents: { ...(userConfig.agents ?? {}) },
     skills: { ...(userConfig.skills ?? {}) },
     commands: { ...(userConfig.commands ?? {}) },
+    coordinator: userConfig.coordinator,
+    taskOverrides: userConfig.taskOverrides,
+    virtualModels: userConfig.virtualModels,
   };
 
-  return { config, path: configPath, warnings };
+  return { config, path: configPath, revision, warnings, error };
 }
 
 export function writeModelTierRoute(
@@ -272,6 +274,7 @@ export function writeModelTierRoute(
   const existingRoute = isRecord(tiers[tier]) ? tiers[tier] : {};
   tiers[tier] = { ...existingRoute, ...route };
   const next = { ...raw, tiers };
+  validateModelRoutingPolicy(next);
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   const temporaryPath = `${configPath}.${process.pid}.tmp`;
   fs.writeFileSync(temporaryPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
@@ -302,6 +305,7 @@ function availableModels(registry?: PiModelRegistryLike): PiModelLike[] {
 function findVerifiedAvailablePiModel(
   model: string,
   registry?: PiModelRegistryLike,
+  exactReference = false,
 ): { model?: PiModelLike; inventoryAvailable: boolean } {
   if (!registry?.getAvailable) return { inventoryAvailable: false };
   let models: PiModelLike[];
@@ -312,7 +316,7 @@ function findVerifiedAvailablePiModel(
   }
   const candidates = models.filter((candidate) => {
     const ref = modelRef(candidate);
-    return candidate.id === model || candidate.name === model || ref === model;
+    return exactReference ? ref === model : candidate.id === model || candidate.name === model || ref === model;
   });
   return { model: candidates.length === 1 ? candidates[0] : undefined, inventoryAvailable: true };
 }
@@ -326,32 +330,25 @@ export function findPiModel(model: string, registry?: PiModelRegistryLike): PiMo
   return candidates.length === 1 ? candidates[0] : undefined;
 }
 
-function inferRequest(request: ResolveModelRoutingRequest): { target: string; targetType: RoutingTargetType } {
+function inferRequest(request: ResolveModelRoutingRequest, catalog: AgentRoutingCatalog): { target: string; targetType: RoutingTargetType } {
   if (request.agent) return { target: request.agent, targetType: "agent" };
   if (request.skill) return { target: request.skill, targetType: "skill" };
   if (request.command) return { target: request.command, targetType: "command" };
 
   const target = request.target || "default";
-  if (target.startsWith("gsd:") || DEFAULT_SKILL_TIERS[target]) return { target, targetType: "skill" };
+  if (target.startsWith("gsd:") || Object.hasOwn(DEFAULT_SKILL_TIERS, target)) return { target, targetType: "skill" };
   if (target.startsWith("/gsd") || target.startsWith("gsd-")) {
-    // `gsd-planner` is an agent; `gsd-plan-phase` is a command/skill. Prefer known agent map.
-    if (DEFAULT_AGENT_TIERS[target]) return { target, targetType: "agent" };
+    // Prefer the package-local upstream agent catalog over the skill heuristic.
+    if (Object.hasOwn(catalog.tiers, target)) return { target, targetType: "agent" };
     return { target, targetType: "skill" };
   }
   return { target, targetType: "command" };
 }
 
-function defaultTierFor(target: string, targetType: RoutingTargetType): RoutingTier | undefined {
-  if (targetType === "agent") return DEFAULT_AGENT_TIERS[target];
-  if (targetType === "skill") return DEFAULT_SKILL_TIERS[target] ?? DEFAULT_SKILL_TIERS[target.replace(/^\//, "")];
-  return DEFAULT_SKILL_TIERS[target] ?? DEFAULT_SKILL_TIERS[target.replace(/^\//, "")];
-}
-
-function configuredRoute(config: ModelRoutingConfig, target: string, targetType: RoutingTargetType): { route: ModelRoute; source: string } {
-  const map = targetType === "agent" ? config.agents : targetType === "skill" ? config.skills : config.commands;
-  const explicit = map?.[target] ?? map?.[target.replace(/^\//, "")];
-  if (explicit) return { route: explicit, source: `${targetType}s.${target}` };
-  return { route: {}, source: "default" };
+function defaultTierFor(target: string, targetType: RoutingTargetType, catalog: AgentRoutingCatalog): RoutingTier | undefined {
+  if (targetType === "agent") return catalog.tiers[target];
+  const name = target.replace(/^\//, "");
+  return Object.hasOwn(DEFAULT_SKILL_TIERS, name) ? DEFAULT_SKILL_TIERS[name] : undefined;
 }
 
 export function resolveModelRouting(
@@ -359,13 +356,17 @@ export function resolveModelRouting(
   context: ModelRoutingContext,
 ): ResolvedModelRouting {
   const loaded = loadModelRoutingConfig(context.cwd);
-  const warnings = [...loaded.warnings];
-  const { target, targetType } = inferRequest(request);
-  const configured = configuredRoute(loaded.config, target, targetType);
-  const rememberedModel = context.sessionModelOverrides?.[target];
-  const tier = configured.route.tier ?? defaultTierFor(target, targetType) ?? null;
-  const tierRoute = tier ? loaded.config.tiers?.[tier] : undefined;
-  const route = mergeRoute(mergeRoute(mergeRoute(loaded.config.default, tierRoute), configured.route), rememberedModel ? { model: rememberedModel } : undefined);
+  const catalog = loadAgentRoutingCatalog(context.packageRoot);
+  const warnings = [...loaded.warnings, ...catalog.warnings];
+  const { target, targetType } = inferRequest(request, catalog);
+  if (targetType === "agent" && !Object.hasOwn(catalog.tiers, target)) {
+    warnings.push(`No upstream routing tier is known for agent ${target}; using only configured/default routing.`);
+  }
+  const rememberedModel = context.sessionModelOverrides && Object.hasOwn(context.sessionModelOverrides, target)
+    ? context.sessionModelOverrides[target] : undefined;
+  const { route, tier, source, pinned } = selectModelRoutingPolicy(loaded.config, {
+    target, targetType, defaultTier: defaultTierFor(target, targetType, catalog), sessionModel: rememberedModel,
+  });
   const fallback = route.fallback ?? loaded.config.fallback ?? "inherit";
   const requestedModel = route.model ?? "inherit";
   const requestedThinking = route.thinking ?? "inherit";
@@ -375,9 +376,11 @@ export function resolveModelRouting(
   let model: string | null = null;
   let available = false;
   let mode: ResolvedModelRouting["recommendedAction"]["mode"] = "inherit-current";
-  let error: string | undefined;
+  let error: string | undefined = loaded.error;
 
-  if (requestedModel === "omit") {
+  if (error) {
+    mode = "error";
+  } else if (requestedModel === "omit") {
     mode = "omit-model";
     model = null;
     available = true;
@@ -387,7 +390,7 @@ export function resolveModelRouting(
     available = Boolean(inheritedModel);
     if (!inheritedModel) warnings.push("No current Pi model is available to inherit.");
   } else {
-    const lookup = findVerifiedAvailablePiModel(requestedModel, context.modelRegistry);
+    const lookup = findVerifiedAvailablePiModel(requestedModel, context.modelRegistry, loaded.config.version === 2);
     if (!lookup.inventoryAvailable) {
       warnings.push("Pi's available-model inventory is unavailable; configured child models are treated as unverified and fallback policy applies.");
     }
@@ -425,6 +428,19 @@ export function resolveModelRouting(
     }
   }
 
+  // Until virtual-child support is verified, v2 decisions must identify one
+  // currently available physical target. Omission cannot prove eligibility.
+  if (loaded.config.version === 2 && mode !== "error" && mode !== "prompt-user") {
+    const verified = model ? findVerifiedAvailablePiModel(model, context.modelRegistry, true).model : undefined;
+    if (!verified || !verified.provider || !verified.id || verified.api === "pi-virtual") {
+      mode = "error";
+      model = null;
+      available = false;
+      error = "Version-2 child routing requires a verified provider-qualified physical model; virtual aliases, omitted defaults and unverified inherited targets are not supported yet.";
+      warnings.push(error);
+    }
+  }
+
   const thinking = requestedThinking === "inherit" ? inheritedThinking : requestedThinking;
   const canLaunch = mode !== "error" && mode !== "prompt-user";
   const routedSubagentModel = canLaunch && mode !== "omit-model" && model
@@ -433,7 +449,7 @@ export function resolveModelRouting(
   const subagent: ResolvedModelRouting["subagent"] = mode === "error"
     ? {
         action: "resolve-first",
-        note: "Do not delegate this target until the unavailable configured model is corrected or its fallback policy is changed.",
+        note: "Do not delegate this target until its routing policy and physical model eligibility are corrected.",
       }
     : mode === "prompt-user"
       ? {
@@ -461,7 +477,17 @@ export function resolveModelRouting(
     thinking,
     available,
     fallback,
-    source: rememberedModel ? `session.${target}` : configured.source === "default" && tier ? `tiers.${tier}` : configured.source,
+    source,
+    pinned,
+    provenance: {
+      configPath: loaded.path,
+      configRevision: loaded.revision,
+      configVersion: loaded.error ? null : loaded.config.version ?? 1,
+      configStatus: loaded.error ? "invalid" : loaded.revision ? "loaded" : "default",
+      catalogPath: catalog.path,
+      catalogVersion: catalog.version ?? null,
+      catalogStatus: catalog.status,
+    },
     warnings,
     error,
     subagent,
@@ -502,6 +528,9 @@ export function formatModelRoutingAudit(context: ModelRoutingContext): string {
     "## Model routing audit",
     "",
     `- config: \`${loaded.path}\` (${fs.existsSync(loaded.path) ? "present" : "defaults only"})`,
+    `- policy: ${results[0].result.provenance.configStatus}, version ${results[0].result.provenance.configVersion ?? "invalid"}, revision ${loaded.revision ?? "none"}`,
+    `- agent catalog: ${results[0].result.provenance.catalogStatus}, GSD Core ${results[0].result.provenance.catalogVersion ?? "unknown"}`,
+    `- catalog source: \`${results[0].result.provenance.catalogPath}\` (read-only package-local adapter)`,
     `- configured target overrides: ${configuredCount}`,
     ...results.map(({ tier, result }) => {
       const consumer = result.subagent.model
@@ -524,6 +553,11 @@ export function formatResolvedModelRouting(result: ResolvedModelRouting): string
     `- target: \`${result.target}\` (${result.targetType})`,
     `- tier: ${result.tier ?? "none"}`,
     `- source: ${result.source}`,
+    `- pinned: ${result.pinned ? "yes" : "no"}`,
+    `- policy: \`${result.provenance.configPath}\` (${result.provenance.configStatus}, version ${result.provenance.configVersion ?? "invalid"})`,
+    `- policy revision: ${result.provenance.configRevision ?? "none"}`,
+    `- agent catalog: ${result.provenance.catalogStatus}, GSD Core ${result.provenance.catalogVersion ?? "unknown"}`,
+    `- catalog source: \`${result.provenance.catalogPath}\``,
     `- requested model: ${result.requestedModel ?? "none"}`,
     `- resolved model: ${result.model ?? "<omit/inherit>"}`,
     `- requested thinking: ${result.requestedThinking}`,

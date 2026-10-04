@@ -21,7 +21,7 @@ function withRoutingConfig(config: string | object, fn: (cwd: string) => void) {
   }
 }
 
-test("model routing surfaces invalid project config and falls back to defaults", () => {
+test("model routing fails closed on corrupt policy instead of guessing its version", () => {
   withRoutingConfig("{not json", (cwd) => {
     const resolved = resolveModelRouting(
       { agent: "gsd-planner" },
@@ -29,11 +29,10 @@ test("model routing surfaces invalid project config and falls back to defaults",
     );
 
     assert.match(resolved.warnings.join("\n"), /Failed to read .*model-routing\.json/);
-    assert.equal(resolved.model, "openai/current");
-    assert.equal(resolved.thinking, "xhigh");
-    assert.equal(resolved.recommendedAction.mode, "inherit-current");
-    assert.equal(resolved.subagent.action, "pass-model");
-    assert.equal(resolved.subagent.model, "openai/current:xhigh");
+    assert.equal(resolved.model, null);
+    assert.equal(resolved.recommendedAction.mode, "error");
+    assert.equal(resolved.subagent.action, "resolve-first");
+    assert.equal(resolved.subagent.model, undefined);
     assert.equal("thinking" in resolved.subagent, false);
   });
 });

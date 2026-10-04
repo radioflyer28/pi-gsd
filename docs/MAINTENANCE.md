@@ -293,6 +293,19 @@ If pi-subagents is installed, confirm the parent-agent flow still starts with:
 
 Then confirm pi-gsd model routing returns a `pi-subagents consumer` action, inherited routes produce exact suffixed models, and `error`/`prompt` routes return `resolve-first`.
 
+Routing metadata currently has one isolated read-only dependency on GSD Core's private `gsd-core/bin/shared/model-catalog.json` layout (`src/extension/agent-routing-catalog.ts`). On GSD upgrades, run the foundation tests and check catalog status/version in doctor output. Missing/invalid metadata must warn and leave tiers unknown; do not copy the role roster or substitute model-profile aliases.
+
+Version-2 routing is currently physical-only. Tests must keep malformed policies, virtual aliases, implicit child defaults and unverified inherited targets fail-closed. Valid legacy policy fallback behavior remains covered separately. Pin/provenance output is guidance, not enforcement by the optional child runtime.
+
+Run the bounded no-model-call compatibility probe when evaluating host integration changes:
+
+```text
+node --experimental-strip-types scripts/routing-compatibility-spike.mjs
+node --experimental-strip-types scripts/routing-compatibility-spike.mjs <trusted-pi-subagents-package-root>
+```
+
+The optional path imports that package's child factory with an injected SDK. It does not prove live child inference or two-plan overlap. See [the evidence and remaining contracts](ROUTING-COMPATIBILITY-SPIKE.md); a successful SDK handshake alone must never enable parallel writing.
+
 ## Release checklist
 
 Before merging a maintenance update:
