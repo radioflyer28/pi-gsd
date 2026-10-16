@@ -23,7 +23,7 @@ test("release metadata stays aligned and package contents are allowlisted", () =
   const pkg = JSON.parse(readFileSync(path.resolve("package.json"), "utf8"));
   const lock = JSON.parse(readFileSync(path.resolve("package-lock.json"), "utf8"));
 
-  assert.equal(pkg.version, "0.2.0");
+  assert.equal(pkg.version, "0.3.0");
   assert.equal(manifest.version, pkg.version);
   assert.equal(lock.version, pkg.version);
   assert.equal(lock.packages[""].version, pkg.version);
@@ -35,7 +35,7 @@ test("release metadata stays aligned and package contents are allowlisted", () =
 test("package metadata keeps GSD Core bundled and Pi packages external", () => {
   const pkg = JSON.parse(readFileSync(path.resolve("package.json"), "utf8"));
 
-  assert.equal(pkg.dependencies["@opengsd/gsd-core"], "^1.15.0");
+  assert.equal(pkg.dependencies["@opengsd/gsd-core"], "^1.17.0");
   assert.equal(pkg.engines.node, ">=24.0.0");
   assert.equal(pkg.peerDependencies["@opengsd/gsd-core"], undefined);
   assert.equal(pkg.optionalDependencies, undefined);
@@ -65,4 +65,15 @@ test("package scripts use the built-in Node test runner and TypeScript compiler"
   assert.equal(pkg.scripts["test:live-pi"], "node scripts/live-pi-rpc-smoke.mjs");
   assert.equal(pkg.scripts["test:live-subagent"], "node scripts/live-subagent-routing-smoke.mjs");
   assert.equal(pkg.scripts["release:check"], "node scripts/validate-release.mjs");
+});
+
+
+test("CI workflows use the declared Node 24 compatibility floor", () => {
+  const ci = readFileSync(path.resolve(".github/workflows/ci.yml"), "utf8");
+  assert.match(ci, /node-version: \[24\]/);
+  for (const workflow of ["compatibility.yml", "live-subagents.yml"]) {
+    const source = readFileSync(path.resolve(".github/workflows", workflow), "utf8");
+    assert.match(source, /node-version: 24\b/);
+    assert.doesNotMatch(source, /node-version: 22\b/);
+  }
 });

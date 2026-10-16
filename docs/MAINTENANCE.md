@@ -170,6 +170,12 @@ GSD Core introduced its native Pi extension in v1.7 and continues to support Pi 
 
 For this adapter, the verified v1.15.0 seams remain the package-local `gsd-tools` binary and flat `commands/gsd/*.md` directory. Dynamic discovery exposes the full set without copied prompts; compatibility tests assert representative required commands and tolerate additive upstream commands rather than freezing the count. Normalize explicit `~/.claude/gsd-core` references in upstream prompt bodies to the package-local core root, including the `@` and `$HOME` spellings. Because current prompts also contain `gsd_run`, direct Node invocations, and multi-runtime launch shims, the injected Pi execution contract must tell the agent to translate all of those forms to the `gsd` tool or `/gsd-run`.
 
+### Pi 1.3.0 / GSD Core 1.17.0 refresh
+
+The development baseline is Pi 1.3.0 and GSD Core 1.17.0; the Pi peer minimum remains >=1.0.0. Pi's changed `before_agent_start` event does not require adaptation because pi-gsd does not subscribe to it. GSD's state-write verification remains upstream-owned. Keep testing the package-local command/catalog seams rather than importing its state engine.
+
+GSD 1.16+ gives blocking guards a 120-second host budget and each Git probe 5 seconds (up to three sequential worktree probes). The opt-in bridge must not kill the guard after 4 seconds. `upstream-safety-guard.ts` uses the 120-second budget, keeps abort/output bounds, and emits bounded, control-character-sanitized stderr/timeout diagnostics without changing decisions. The delayed-denial regression must still block after 4.5 seconds; timeout/cancellation tests must remain fail-open.
+
 ## context-mode compatibility
 
 context-mode is an optional Pi package. `pi-gsd` should detect it and add guardrails; it should not import it or depend on it.
@@ -291,11 +297,13 @@ If pi-subagents is installed, confirm the parent-agent flow still starts with:
 { "action": "list" }
 ```
 
-Then confirm pi-gsd model routing returns a `pi-subagents consumer` action, inherited routes produce exact suffixed models, and `error`/`prompt` routes return `resolve-first`.
+Then confirm pi-gsd model routing returns a `pi-subagents consumer` action, inherited routes produce exact suffixed models, and `error`/`prompt` routes return `resolve-first`. With an explicitly opted-in version-2 fixture, exercise taskId/tier requests for light planning and heavy execution, repeated labels and locked/disallowed overrides. The structured `details.modelRouting` decision must be the same snapshot shown in text and retained by the advisory—not a second resolution.
 
 Routing metadata currently has one isolated read-only dependency on GSD Core's private `gsd-core/bin/shared/model-catalog.json` layout (`src/extension/agent-routing-catalog.ts`). On GSD upgrades, run the foundation tests and check catalog status/version in doctor output. Missing/invalid metadata must warn and leave tiers unknown; do not copy the role roster or substitute model-profile aliases.
 
 Version-2 routing is currently physical-only. Tests must keep malformed policies, virtual aliases, implicit child defaults and unverified inherited targets fail-closed. Valid legacy policy fallback behavior remains covered separately. Pin/provenance output is guidance, not enforcement by the optional child runtime.
+
+Task overrides require an explicit `allowedTiers` list and never change the parent model or persist policy. The advisory is capped at 128 decisions/five minutes, reset at turn end, session start/shutdown and tree navigation, and rejects late resolution evidence from an earlier lifecycle scope. It only associates unique legacy direct-role calls. Task-scoped, generic-worker, scripted and different-cwd calls must report validation unavailable without parsing prompts/scripts or clearing unrelated evidence. Tests cover interleaving and branch reset; they do not prove actual child launch/model-scope enforcement.
 
 Run the bounded no-model-call compatibility probe when evaluating host integration changes:
 
@@ -304,7 +312,7 @@ node --experimental-strip-types scripts/routing-compatibility-spike.mjs
 node --experimental-strip-types scripts/routing-compatibility-spike.mjs <trusted-pi-subagents-package-root>
 ```
 
-The optional path imports that package's child factory with an injected SDK. It does not prove live child inference or two-plan overlap. See [the evidence and remaining contracts](ROUTING-COMPATIBILITY-SPIKE.md); a successful SDK handshake alone must never enable parallel writing.
+The optional path copies that trusted package's source and manifest into the disposable fixture and links only the fixture to this repository's installed peers. It imports the snapshot's child factory with an injected SDK, records the manifest version/source SHA-256 and dependency context, and verifies external cwd plus virtual registration/queue draining before resolution. It never installs dependencies into or patches the original fork. This isolates peer-resolution failures but is not proof that the installed fork resolves its own dependencies, nor proof of real-Pi virtual dispatch, live child inference or two-plan overlap. See [the evidence and remaining contracts](ROUTING-COMPATIBILITY-SPIKE.md); a successful SDK handshake alone must never enable parallel writing.
 
 ## Release checklist
 

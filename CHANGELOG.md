@@ -4,18 +4,26 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-16
+
 ### Changed
 
-- Require Pi coding-agent and pi-ai peers >=1.0.0; refresh the development lockfile to Pi 1.0.1, including its brace-expansion security fix. Pi remains host-provided rather than a bundled runtime dependency.
-- Confirmed bundled GSD Core 1.15.0 is still the latest stable npm release; retain the ^1.15.0 dependency and Node.js >=24 requirement.
+- Retain Pi coding-agent and pi-ai peers >=1.0.0; refresh the development lockfile to Pi 1.3.0. Pi remains host-provided rather than a bundled runtime dependency.
+- Raise the bundled GSD Core dependency baseline to ^1.17.0; retain Node.js >=24.
+- Align the opt-in upstream guard subprocess timeout with upstream's 120-second blocking budget, preserve cancellation/fail-open behavior, and expose bounded timeout/stderr diagnostics.
+- Probe optional child-factory compatibility from an isolated source snapshot using repository peers, without changing the installed fork. Verify virtual registration/queue draining before model resolution rather than expecting the historical failure.
 - Leave the optional, separately installed pi-subagents fork unchanged.
+- Align all CI workflow runtimes with the declared Node.js 24 minimum.
 - Read agent routing tiers from the installed GSD Core catalog instead of a copied role roster; report unavailable/invalid metadata without inventing a cheap tier.
 - Block delegation on unreadable or malformed routing policies rather than silently reverting to defaults. Valid legacy policies retain their existing routing/fallback behavior.
 
 ### Added
 
 - An audited implementation plan and reproducible, no-model-call compatibility spike for coordinator-selected task tiers, optional Pi virtual models and GSD-owned wave/worktree integration. Virtual children and parallel writing remain gated; no installed fork or upstream registry is patched.
-- A strict opt-in version-2 physical routing policy foundation, with provider-qualified references, role-pin metadata, fail-closed physical-model eligibility, config content revisions and catalog provenance. Task-override and virtual-routing enablement is rejected until those features are implemented.
+- Research/design notes for a proposed reusable routing dependency; these do not enable virtual routing or add a package dependency.
+- A strict opt-in version-2 physical routing policy foundation, with provider-qualified references, role-pin metadata, fail-closed physical-model eligibility, config content revisions and catalog provenance. Virtual-routing enablement remains gated.
+- Task-scoped `resolve-model` tier requests with bounded caller labels, explicit tier allowlists, locked-role/operator-pin rejection, complete tier selection and immutable unique decisions. Resolution neither switches the parent nor launches children or writes policy.
+- Bounded decision-aware advisory evidence with lifecycle/cwd scoping. Unique legacy direct-role attempts can be checked; task-scoped/scripted/generic-worker or differing-cwd launches report validation unavailable rather than guessing associations or clearing unrelated pending decisions.
 
 ## [0.2.0] - 2026-08-19
 

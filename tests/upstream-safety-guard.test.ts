@@ -4,7 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import test from "node:test";
 
-import { registerUpstreamSafetyGuard, runUpstreamGuard } from "../src/extension/upstream-safety-guard.ts";
+import { registerUpstreamSafetyGuard, runUpstreamGuard, UPSTREAM_GUARD_TIMEOUT_MS, type UpstreamGuardDiagnostic } from "../src/extension/upstream-safety-guard.ts";
 import { mockPi } from "./test-utils.ts";
 
 test("upstream safety guard is disabled by default", async () => {
@@ -96,6 +96,77 @@ test("upstream guard runner ignores malformed output", async () => {
     const script = path.join(cwd, "guard.cjs");
     fs.writeFileSync(script, "process.stdin.resume(); process.stdin.on('end', () => process.stdout.write('not-json'));\n");
     assert.equal(await runUpstreamGuard(script, {}, cwd), undefined);
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+
+test("upstream guard preserves a denial arriving after the old 4s timeout", async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-gsd-safety-slow-"));
+  try {
+    assert.equal(UPSTREAM_GUARD_TIMEOUT_MS, 120_000);
+    const script = path.join(cwd, "guard.cjs");
+    fs.writeFileSync(script, `process.stdin.resume(); process.stdin.on('end', () => setTimeout(() => process.stdout.write(JSON.stringify({ decision: 'block', reason: 'delayed denial' })), 4500));`);
+    assert.deepEqual(await runUpstreamGuard(script, {}, cwd), { block: true, reason: "delayed denial" });
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("upstream guard bounds stderr diagnostics without losing valid blocks", async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-gsd-safety-stderr-"));
+  try {
+    const script = path.join(cwd, "guard.cjs");
+    fs.writeFileSync(script, `process.stdin.resume(); process.stdin.on('end', () => { process.stderr.write('probe diagnostic\\u001b\\u009b' + 'x'.repeat(10000)); process.stdout.write(JSON.stringify({ decision: 'block', reason: 'keep block' })); });`);
+    const diagnostics: UpstreamGuardDiagnostic[] = [];
+    assert.deepEqual(await runUpstreamGuard(script, {}, cwd, undefined, { onDiagnostic: (entry) => diagnostics.push(entry) }), { block: true, reason: "keep block" });
+    assert.equal(diagnostics.length, 1);
+    assert.equal(diagnostics[0].kind, "stderr");
+    assert.equal(diagnostics[0].script, "guard.cjs");
+    assert.equal(diagnostics[0].message.length, 2048);
+    assert.doesNotMatch(diagnostics[0].message, /[\u0000-\u001f\u007f-\u009f]/);
+    assert.deepEqual(await runUpstreamGuard(script, {}, cwd, undefined, { onDiagnostic: () => { throw new Error("diagnostic sink failed"); } }), { block: true, reason: "keep block" });
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("upstream guard timeout and cancellation stay fail-open and distinct", async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-gsd-safety-cancel-"));
+  try {
+    const script = path.join(cwd, "guard.cjs");
+    fs.writeFileSync(script, "process.stdin.resume(); setInterval(() => {}, 1000);");
+    const diagnostics: UpstreamGuardDiagnostic[] = [];
+    assert.equal(await runUpstreamGuard(script, {}, cwd, undefined, { timeoutMs: 300, onDiagnostic: (entry) => diagnostics.push(entry) }), undefined);
+    assert.equal(diagnostics.filter(({ kind }) => kind === "timeout").length, 1);
+    assert.match(diagnostics[0].message, /300ms.*unknown/);
+    diagnostics.length = 0;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 100);
+    try {
+      assert.equal(await runUpstreamGuard(script, {}, cwd, controller.signal, { onDiagnostic: (entry) => diagnostics.push(entry) }), undefined);
+    } finally {
+      clearTimeout(timer);
+    }
+    assert.equal(diagnostics.length, 0);
+    // A pre-aborted call must not spawn even a missing script.
+    assert.equal(await runUpstreamGuard(path.join(cwd, "missing.cjs"), {}, cwd, controller.signal, { onDiagnostic: (entry) => diagnostics.push(entry) }), undefined);
+    assert.equal(diagnostics.length, 0);
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("upstream guard excessive output fails open with a bounded diagnostic", async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-gsd-safety-output-"));
+  try {
+    const script = path.join(cwd, "guard.cjs");
+    fs.writeFileSync(script, "process.stdin.resume(); process.stdin.on('end', () => process.stdout.write('x'.repeat(70000)));");
+    const diagnostics: UpstreamGuardDiagnostic[] = [];
+    assert.equal(await runUpstreamGuard(script, {}, cwd, undefined, { onDiagnostic: (entry) => diagnostics.push(entry) }), undefined);
+    assert.equal(diagnostics[0].kind, "output-limit");
+    assert.ok(diagnostics[0].message.length <= 2048);
   } finally {
     fs.rmSync(cwd, { recursive: true, force: true });
   }

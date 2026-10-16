@@ -48,6 +48,7 @@ test("invalid or premature policy enablement is rejected instead of normalized a
     { version: 2, tiers: { heavy: { thinking: "unlimited" } } },
     { version: 2, agents: { "gsd-executor": { tier: "extreme" } } },
     { version: 2, taskOverrides: { allowedTiers: ["light", "light"] } },
+    { version: 2, agents: { "gsd-executor": { locked: true }, "/gsd-executor": { locked: false } } },
     { version: 2, agents: { "gsd-executor": { model: "bare-id" } } },
     { version: 2, agents: { "gsd-executor": { locked: "true" } } },
     { version: 2, taskOverrides: { enabled: true } },

@@ -147,7 +147,9 @@ function piExecutionGuidance(): string[] {
     "- Run every upstream GSD CLI operation (`gsd-tools`, `gsd_run`, or direct `node .../gsd-tools.cjs`) through pi-gsd: `gsd({ action: \"run\", args: [...] })` or `/gsd-run <args>`.",
     "- Never execute a bare `gsd-tools`/`gsd_run`, `command -v gsd-tools`, a global GSD install, a direct `node .../gsd-tools.cjs` command, or a runtime-home launch shim. Translate the upstream CLI example to its argument array while preserving its GSD semantics.",
     "- Use Pi chat/UI for upstream interactive prompts and call pi-subagents directly only when the parent agent independently chooses delegation.",
-    "- Before launching each distinct upstream GSD subagent role, call `gsd({ action: \"resolve-model\", agent: \"<exact-gsd-agent-name>\" })` and obey its pi-subagents consumer action: `pass-model` means pass the exact suffixed model, `omit-model` means omit it, and `resolve-first` means do not delegate yet.",
+    "- Before each bounded upstream GSD child assignment, call `gsd({ action: \"resolve-model\", agent: \"<exact-gsd-agent-name>\", taskId: \"<bounded-assignment-label>\" })`. If version-2 policy allows, add `tier: \"heavy\"`, `\"standard\"` or `\"light\"` for that assignment. Obey its consumer action: `pass-model` means pass the exact suffixed physical model, `omit-model` means omit it, and `resolve-first` means do not delegate yet.",
+    "- Keep tiny work inline when delegation would cost more. Preserve upstream role instructions and authorization; bound each helper's inputs, output ownership and verification expectations. Do not invent extra workflow steps to create cheap work.",
+    "- Task/decision IDs are correlation only, not launch-tool parameters. Pass each model per child; scripted/task-scoped launch association is not verified by the advisory guard and a workflow's top-level model is not per-child evidence.",
   ];
 }
 

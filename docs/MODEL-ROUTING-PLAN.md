@@ -1,8 +1,8 @@
 # Coordinator-directed model routing: implementation plan
 
-Status: slices 0–1 complete (compatibility investigation and physical routing foundation). Coordinator task overrides, virtual routing and wave-parallel writing are not implemented.
+Status: slices 0–2 complete (compatibility investigation, physical routing foundation and task-scoped coordinator overrides). Virtual routing and wave-parallel writing remain unimplemented.
 
-This plan is for maintainers implementing task-sensitive model allocation and safe wave-parallel execution in pi-gsd. It incorporates the design audit, the Pi 1.0 compatibility refresh, and the worktree integration review. Complete the slices in order; do not interpret examples of proposed configuration or tool arguments as supported today.
+This plan is for maintainers implementing task-sensitive model allocation and safe wave-parallel execution in pi-gsd. It incorporates the design audit, the Pi 1.0 compatibility refresh, and the worktree integration review. Complete the slices in order. Only implemented slice contracts are supported; remaining proposed configuration, aliases and tool examples must not be treated as enabled features.
 
 ## 1. Outcome and ownership
 
@@ -22,6 +22,10 @@ Do not copy upstream prompts, implement a phase state machine, introduce an inte
 
 ## 2. Verified compatibility baseline
 
+Release 0.3.0 uses locked Pi **1.3.0** and GSD Core **1.17.0** (`^1.17.0` dependency floor), retaining Pi peers **>=1.0.0** and Node.js **>=24.0.0**. Source/test typechecks, **149 tests**, build, no-key Pi RPC smoke (**78** GSD commands), release validation and zero-vulnerability audit passed on the refreshed baseline. An isolated Pi **1.0.0** install also passed checks, 149 tests, build, RPC smoke and release validation. See [current compatibility evidence](ROUTING-COMPATIBILITY-SPIKE.md) for the optional source-snapshot probe and its remaining gates.
+
+### Historical Pi 1.0 foundation refresh
+
 The npm `latest` tags checked during this refresh were GSD Core **1.15.0** and Pi **1.0.1**. GSD Core was already current, so its `^1.15.0` declaration is unchanged. Node.js **>=24.0.0** remains required.
 
 Pi coding-agent and pi-ai are now peer dependencies with **>=1.0.0** requirements; the development lockfile resolves **1.0.1**. They are not bundled runtime dependencies. Pi's package manager suppresses automatic peer installation, so peer metadata is a compatibility declaration, not a runtime capability guard.
@@ -35,9 +39,9 @@ Upgrade evidence on Windows / Node 24.13.0:
 | Build | Passed | Passed |
 | No-key Pi RPC smoke | 78 GSD commands; doctor handled | 78 GSD commands; doctor handled |
 
-The final locked install reports zero npm audit vulnerabilities and passes release metadata validation. The package version remains 0.2.0 with changes recorded as unreleased. The global Pi installation was not upgraded.
+That foundation install reported zero npm audit vulnerabilities and passed release metadata validation. At that point the package version remained 0.2.0 with changes recorded as unreleased. The global Pi installation was not upgraded.
 
-The installed `radioflyer28/pi-subagents@v0.71.0-child-profiles.1` fork is deliberately unchanged. It remains an optional, separately installed Pi package. Neither credentialed child execution nor Sol/VT-ARC endpoint behavior was verified in this refresh. Current smoke results do not prove future virtual-model routing.
+The then-installed `radioflyer28/pi-subagents@v0.71.0-child-profiles.1` fork was deliberately unchanged by that refresh. It remains an optional, separately installed Pi package. Neither credentialed child execution nor Sol/VT-ARC endpoint behavior was verified in this refresh. Current smoke results do not prove future virtual-model routing.
 
 ### Updated API facts that constrain the design
 
@@ -64,7 +68,9 @@ Deliver:
 4. A verified adapter for upstream wave-parallel plan execution with one worktree lifecycle owner.
 5. Honest diagnostics, compatibility checks, and evaluation evidence.
 
-Defer classifiers, automatic cross-provider retry fallback, automatic escalation on failed tests, automatic parent downgrades, personal/global config layering, and a generic `gsd/task` assignment protocol. Do not upgrade or modify the installed pi-subagents fork as part of this plan without a separate decision.
+For these GSD implementation slices, defer classifier-driven GSD selection, automatic cross-provider retry fallback, automatic escalation on failed tests, automatic parent downgrades, personal/global config layering, and a generic `gsd/task` assignment protocol. Do not upgrade or modify the installed pi-subagents fork as part of this plan without a separate decision.
+
+The [standalone virtual-model design](VIRTUAL-MODEL-MVP-RESEARCH.md) separately makes automatic semantic selection a first-class goal, using classifier-shaped `state`/`questions` requests and `namespace/role:effort` choices. It proposes a reusable library plus an optional Pi extension so consumers do not reimplement routing machinery. This is a future dependency/integration direction, not an implemented package or an expansion of the current GSD feature gates.
 
 ## 4. Policy contract
 
@@ -108,14 +114,14 @@ Within those constraints:
 4. Upstream role routing tier.
 5. Project default / explicit inherit behavior.
 
-Rules finalized by slice 0, to implement and test in slice 1:
+Rules finalized by slice 0, with policy foundations in slice 1 and task overrides in slice 2:
 
 - A locked rule freezes the complete effective model/thinking route, not just its tier label. A forbidden override returns `resolve-first` with an explanation rather than silently disregarding the request.
-- Task overrides are off when absent. Existing explicit role model assignments are pins by default; only a version-2 rule with explicit `locked: false` permits overriding that role's model. `locked: true` also protects tier-only rules. No automatic rewriting of existing config.
+- Task overrides are off when absent. Existing explicit physical role model assignments are pins by default; only a version-2 rule with explicit `locked: false` permits overriding that role's model. `locked: true` also protects tier-only rules. No automatic rewriting of existing config.
 - A chosen task tier replaces default route selection coherently; do not retain an unrelated role-level physical model or thinking value from a shallow merge.
 - Unknown roles are reported as unknown, then use a declared default/inherit route only if eligible. Never silently infer that new roles are cheap or adequately verified.
 - Valid legacy configuration retains its unavailable-model fallback behavior. Version-2 policies default to error on ineligible routes. Unreadable files, malformed JSON and non-object roots fail closed in either format, because a corrupt version marker cannot safely establish legacy intent. Missing files still use defaults. A malformed policy must not silently enable a cheaper route.
-- Slice 1 delivers physical policy loading, provenance, dynamic role tiers and pin metadata. It must reject enablement of unimplemented task-override or virtual-routing switches rather than silently accept inert configuration; later slices remove those feature gates when implemented.
+- Slice 1 delivered physical policy loading, provenance, dynamic role tiers and pin metadata with future-feature gates. Slice 2 enables task overrides only with explicit version-2 opt-in and a nonempty allowed-tier list. Virtual-routing enablement remains rejected until implemented.
 - Existing `prompt` fallback is resolved by an explicit interactive operator action. Routers and headless children never open selection dialogs.
 - A virtual route must resolve to a physical model. Reject recursive aliases and ambiguous `inherit`; never inherit the selected virtual model back into itself. An explicit physical snapshot can support inheritance only when its provenance and eligibility are known.
 
@@ -123,7 +129,7 @@ Rules finalized by slice 0, to implement and test in slice 1:
 
 ### Task-scoped physical resolution first
 
-Extend `resolve-model` with an optional requested tier and task identity. Illustrative request:
+`resolve-model` now accepts an optional requested tier and task identity. Supported request after reloading the extension and explicitly enabling the policy:
 
 ```json
 {
@@ -140,9 +146,21 @@ Return an immutable decision identifying the requested/effective tier, source of
 
 The parent passes the exact returned physical model reference to pi-subagents. This does not change the parent's selected model, write project policy, or automatically launch anything. Two tasks for the same role may choose different tiers safely.
 
-Replace role-keyed pending advisory state with bounded, task/decision-aware records scoped to the session/branch and resolved project cwd. Generate distinct decision IDs even when caller task labels repeat. Do not clear unrelated records on the next launch. Where the launch interface cannot associate a decision reliably, report validation as unavailable rather than guessing. A decision ID is not a security token, and a warning is not enforcement.
+The advisory now stores up to 128 decision-keyed records with a five-minute lifetime, scoped to the current turn/session/branch and resolved cwd. Turn end, tree navigation and session start/shutdown clear evidence; late asynchronous resolutions cannot repopulate a different lifecycle scope. Repeated task labels receive distinct decision IDs. The dispatcher returns exactly the same immutable decision in text/details and to the advisory.
+
+The optional child tool has no native GSD decision association. Only a unique legacy direct-role attempt is consumed; task-scoped, generic-worker, scripted and differing-cwd launches report validation unavailable rather than guessing. Unrelated decisions survive launch attempts; policy revision changes require fresh resolution, never silent rerouting. No prompt/script parsing or invented launch fields are used. A decision ID is not a security token, and a warning is not enforcement.
+
+### Reusable routing dependency direction
+
+A future pi-gsd adapter should reuse the standalone package's catalog validation, decision construction, selector answer validation and physical resolution rather than build a second generic router. GSD retains role precedence, pins, task boundaries, allowed assignments and workflow ownership. Apply these restrictions before offering choices, and validate the selected physical assignment again before use. Explicit operator/role pins take precedence over automatic selection.
+
+The shared contract supports an existing coordinating LLM, a dedicated LLM selector or a classifier such as Jev. Confidence is optional classifier metadata, not a required LLM output. Explicit variants bypass selection; `virt/auto` chooses role and effort, while `virt/auto:low` or `virt/auto:high` constrains effort exactly. Abstention or an unavailable permitted target returns an actionable failure, not silent escalation.
+
+Library imports must be side-effect-free and accept explicit policy/inventory inputs. Importing it must not activate the standalone Pi extension, read unrelated global config or change the parent selection. Assign one owner for native alias registration. The concrete package dependency, GSD tier-to-variant mapping and bare-auto versus explicit-effort native UI semantics require implementation decisions and tests; no current routing config is migrated by this proposal.
 
 ### Thin virtual surface
+
+The initial deterministic GSD aliases remain compatible resource policies, distinct from the generic package's future automatic selections:
 
 | Selection | Physical policy |
 | --- | --- |
@@ -200,7 +218,7 @@ If the supported seams cannot express this arrangement, propose the narrow upstr
 
 ## 7. Implementation slices
 
-Slices 0–1 are complete; slices 2–7 are pending implementation. Keep them reviewable and independently verifiable. Physical wave execution does not depend on virtual-child support; the latter remains a separate gate.
+Slices 0–2 are complete; slices 3–7 are pending implementation. Keep them reviewable and independently verifiable. Physical wave execution does not depend on virtual-child support; the latter remains a separate gate.
 
 ### Slice 0 — Compatibility spike and contract decisions
 
@@ -230,6 +248,12 @@ Slices 0–1 are complete; slices 2–7 are pending implementation. Keep them re
 
 ### Slice 2 — Coordinator overrides with physical child guidance
 
+**Status:** complete. The public tool accepts bounded `taskId` and canonical `tier` requests. Overrides require an explicit allowed-tier list, replace the whole role default selection, and reject role/session pins and target-kind/alias bypasses. Immutable decisions carry unique IDs, requested tier, physical launch guidance and unobserved provider-effective thinking. No parent model change, policy write or child launch occurs during resolution.
+
+`routing-advisory.ts` replaces role-keyed pending state with bounded lifecycle/cwd-scoped evidence and explicitly unavailable association where the child API cannot prove it. Upstream role prompts remain intact; only Pi-specific allocation/handoff guidance changed.
+
+**Verification:** source/test typechecks, **143 tests**, build, no-key Pi RPC smoke (**78** GSD commands and doctor handling), release validation, compatibility spike and diff checks passed on locked Pi 1.0.1. Concurrent same-role resolutions, repeated labels, pins/allowlists, physical eligibility, config revisions and lifecycle races are tested. This is not credentialed child execution or a parallel-wave claim. Live routing policy and the installed fork remain unchanged.
+
 **Depends on:** slice 1.
 
 - Extend the tool schema, dispatcher request types, resolver output, and guidance with task-scoped tier selection.
@@ -243,7 +267,7 @@ Slices 0–1 are complete; slices 2–7 are pending implementation. Keep them re
 
 **Depends on:** slice 1; integrate with slice 2's shared resolver.
 
-- Add a narrow virtual-model module using Pi's exported API types. Extend the registration facade only where necessary rather than weakening types with broad casts.
+- Add a narrow virtual-model module using Pi's exported API types. Extend the registration facade only where necessary rather than weakening types with broad casts. Preserve a seam for the proposed reusable routing library; do not embed a separate classifier engine or require an unpublished dependency to complete these deterministic aliases.
 - When explicitly enabled, register the four aliases at extension load with no automatic selection. Verify trusted startup-context lookup and reload semantics before coding the registration path. Use the same physical policy resolver; add no classifier or second precedence engine.
 - Implement lifecycle rules above, branch-safe minimal state, config revision handling, and actionable unavailable/recursive-route errors.
 - Use capability detection for optional APIs and clear unsupported-runtime diagnostics even though Pi >=1.0.0 is the declared minimum.

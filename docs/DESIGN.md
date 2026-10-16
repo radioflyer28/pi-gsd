@@ -142,6 +142,16 @@ In combined mode, the preferred pattern is:
 2. Child agents use context-mode tools when they need context-efficient processing.
 3. Nested subagents are avoided unless the selected subagent is explicitly intended to orchestrate.
 
+## Proposed reusable model-routing dependency
+
+The [standalone virtual-model design](VIRTUAL-MODEL-MVP-RESEARCH.md) proposes a library plus an optional Pi extension. This is a design direction, not an installed dependency or supported feature. It would centralize catalog validation, classifier-shaped decision requests, interchangeable LLM/Jev selectors, and physical assignment resolution.
+
+Virtual choices use `namespace/role:effort`; an explicit role without effort uses its configured default. Global `virt/auto` chooses role and effort, while `virt/auto:low` or `virt/auto:high` fixes effort and chooses a role. Explicit selections remain manual overrides. Virtual effort is distinct from physical reasoning and selector reasoning. Native Pi must preserve bare auto versus explicitly fixed effort; the adapter mechanism remains a verification gate.
+
+pi-gsd would supply task state and eligible choices after applying GSD precedence, role locks and restrictions. It would retain task boundaries, delegation authorization, workflow ownership and outcome verification. The library would return a validated physical assignment, not launch a child or change the parent model. Its import must not register Pi resources or load ambient configuration, so it can be a normal code dependency without requiring activation of the standalone extension.
+
+This differs from context-mode and pi-subagents, whose public runtime capabilities must be loaded as Pi extensions. No global singleton or duplicate native alias registration should be required. Keep current GSD config and deterministic aliases unchanged until an explicit integration/migration is implemented. See the [routing implementation plan](MODEL-ROUTING-PLAN.md) for existing feature gates and physical-child guidance.
+
 ## State boundaries
 
 `.planning/` is the canonical GSD project record directory.
@@ -179,6 +189,8 @@ Before adding behavior, classify it:
 | Pi tool/command registration | `pi-gsd` |
 | Pi-specific detection or guardrails | `pi-gsd` |
 | GSD workflow semantics | upstream GSD Core |
+| Generic model-policy selection and resolution | Proposed standalone routing library; see its design before implementing |
+| GSD role precedence, pins and assignment constraints | `pi-gsd`, adapting upstream metadata |
 | Phase artifact naming or lifecycle | upstream GSD Core |
 | Fresh-context or parallel execution | `pi-subagents`, called by the parent agent |
 | Bulky context processing | `context-mode`, called directly when useful |

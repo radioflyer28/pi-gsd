@@ -3,7 +3,8 @@
 // never imported by the production adapter. All Git mutations stay in a temp repo.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
@@ -66,31 +67,56 @@ try {
   assert.equal(git(["status", "--porcelain"]), "", "inspect query must not mutate fixture files");
 
   if (forkRoot) {
-    const { createDefaultChildSessionFactory } = await import(pathToFileURL(path.join(forkRoot, "src/runs/shared/child-session.ts")).href);
-    report.forkVersion = JSON.parse(readFileSync(path.join(forkRoot, "package.json"), "utf8")).version;
+    // Probe a source snapshot, never install into or patch the operator's fork.
+    // Peers deliberately come from this repo's tested dependency tree, not the
+    // optional checkout's potentially incomplete package-resolution context.
+    const snapshot = path.join(root, "fork-snapshot");
+    mkdirSync(snapshot);
+    cpSync(path.join(forkRoot, "src"), path.join(snapshot, "src"), { recursive: true });
+    cpSync(path.join(forkRoot, "package.json"), path.join(snapshot, "package.json"));
+    symlinkSync(path.join(repoRoot, "node_modules"), path.join(snapshot, "node_modules"), process.platform === "win32" ? "junction" : "dir");
+    const entry = path.join(snapshot, "src/runs/shared/child-session.ts");
+    report.forkVersion = JSON.parse(readFileSync(path.join(snapshot, "package.json"), "utf8")).version;
+    report.childFactorySourceSha256 = createHash("sha256").update(readFileSync(entry)).digest("hex");
+    report.childFactoryDependencyContext = "isolated source snapshot with repository peers; not installed-fork resolution or live child inference";
+    const { createDefaultChildSessionFactory } = await import(pathToFileURL(entry).href);
     const worktree = path.join(root, "plan-01");
     git(["worktree", "add", "-b", "fixture-plan-01", worktree]);
     const observed = [];
+    const virtualOrder = [];
+    const loaders = [];
     let withVirtual = false;
     const stop = "SPIKE_STOP_BEFORE_SESSION_CREATION";
     const fakePi = {
       ModelRuntime: { create: async () => ({
-        virtual: new Map(), registerVirtualModel(definition) { this.virtual.set(`${definition.provider}/${definition.id}`, definition); },
+        virtual: new Map(),
+        registerVirtualModel(definition) { virtualOrder.push("register"); this.virtual.set(`${definition.provider}/${definition.id}`, definition); },
+        async refresh(options) { assert.equal(options.allowNetwork, false); virtualOrder.push("refresh-offline"); },
       }) },
       SettingsManager: { create: (actualCwd) => { observed.push(["settings", actualCwd]); return { getTheme: () => ({}) }; } },
       DefaultResourceLoader: class {
-        loaded = false;
-        constructor(options) { observed.push(["loader", options.cwd]); }
+        constructor(options) {
+          observed.push(["loader", options.cwd]);
+          this.extensions = { extensions: [], errors: [], runtime: {
+            pendingVirtualModelRegistrations: withVirtual ? [{ definition: { provider: "gsd", id: "light" }, extensionPath: "<fixture>" }] : [],
+          } };
+          loaders.push(this);
+        }
         async reload() {}
-        getExtensions() { return { extensions: [], errors: [], runtime: {
-          pendingVirtualModelRegistrations: withVirtual ? [{ definition: { provider: "gsd", id: "light" }, extensionPath: "<fixture>" }] : [],
-        } }; }
+        getExtensions() { return this.extensions; }
       },
       SessionManager: { inMemory: (actualCwd) => { observed.push(["session", actualCwd]); return {}; } },
-      resolveCliModel: ({ cliModel, modelRuntime }) => cliModel === "gsd/light"
-        ? modelRuntime.virtual.has(cliModel) ? { model: { provider: "gsd", id: "light" } } : { error: "SPIKE_VIRTUAL_NOT_REGISTERED" }
-        : { model: { provider: "fixture", id: "physical" } },
-      createAgentSession: async (options) => { observed.push(["create", options.cwd]); throw new Error(stop); },
+      resolveCliModel: ({ cliModel, modelRuntime }) => {
+        if (cliModel !== "gsd/light") return { model: { provider: "fixture", id: "physical" } };
+        virtualOrder.push("resolve");
+        return modelRuntime.virtual.has(cliModel) ? { model: { provider: "gsd", id: "light" } } : { error: "SPIKE_VIRTUAL_NOT_REGISTERED" };
+      },
+      createAgentSession: async (options) => {
+        observed.push(["create", options.cwd]);
+        assert.deepEqual(options.model, withVirtual ? { provider: "gsd", id: "light" } : { provider: "fixture", id: "physical" });
+        if (withVirtual) virtualOrder.push("create-boundary");
+        throw new Error(stop);
+      },
     };
     const factory = createDefaultChildSessionFactory({ loadPiCodingAgent: async () => fakePi });
     const launch = {
@@ -103,8 +129,12 @@ try {
       assert.deepEqual(observed, ["settings", "loader", "session", "create"].map((stage) => [stage, worktree]));
       report.externalWorktreeCwd = "forwarded unchanged to settings, resources, session storage and session creation (injected SDK)";
       withVirtual = true;
-      await assert.rejects(factory.create({ ...launch, model: "gsd/light" }), /SPIKE_VIRTUAL_NOT_REGISTERED/);
-      report.virtualChildPreResolution = "queued virtual definition not applied before model resolution (injected SDK)";
+      observed.length = 0;
+      await assert.rejects(factory.create({ ...launch, model: "gsd/light" }), new RegExp(stop));
+      assert.deepEqual(observed, ["settings", "loader", "session", "create"].map((stage) => [stage, worktree]));
+      assert.deepEqual(virtualOrder, ["register", "refresh-offline", "resolve", "create-boundary"]);
+      assert.deepEqual(loaders.at(-1).getExtensions().runtime.pendingVirtualModelRegistrations, []);
+      report.virtualChildPreResolution = "queued virtual definition registered and drained before model resolution; offline refresh; exact virtual model reaches session-creation boundary (injected SDK)";
     } finally {
       await factory.dispose();
     }

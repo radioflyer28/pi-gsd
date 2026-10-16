@@ -2,7 +2,7 @@
 
 `pi-gsd` is a thin [Pi](https://github.com/earendil-works/pi-coding-agent) package that exposes upstream `@opengsd/gsd-core` workflows inside Pi.
 
-It does **not** reimplement GSD. It registers a small Pi tool, slash commands, and guardrails that help Pi use GSD safely while keeping workflow behavior in upstream GSD Core. Pi 1.0.0 or newer is required; the development lockfile uses Pi 1.0.1. The bundled GSD Core dependency is 1.15.0 (the latest stable release at the compatibility refresh), which requires Node.js 24 or newer. pi-subagents remains an optional, separately installed Pi package.
+It does **not** reimplement GSD. It registers a small Pi tool, slash commands, and guardrails that help Pi use GSD safely while keeping workflow behavior in upstream GSD Core. Pi 1.0.0 or newer is required; the development lockfile uses Pi 1.3.0. The bundled GSD Core dependency baseline is 1.17.0, which requires Node.js 24 or newer. pi-subagents remains an optional, separately installed Pi package.
 
 ## Why?
 - I want to use GSD inside Pi.
@@ -114,7 +114,26 @@ Agent tiers are read from the package-local GSD Core catalog, so newly added ups
 
 Valid unversioned/version-1 policies retain legacy routing. Opt into stricter physical routing with `"version": 2`: model references must be provider-qualified, unknown fields are errors, unavailable targets default to `fallback: "error"`, and every launch requires a currently available physical model. Virtual aliases, omitted child defaults and unverifiable inheritance return `resolve-first`. Unreadable/malformed policy files block delegation in either format; a missing file still uses defaults.
 
-Resolution reports policy path, content revision, catalog version/status and pin metadata. Explicit role-model assignments are pins by default; a version-2 role may explicitly use `"locked": false` to permit future task overrides. This is not a launch-enforcement boundary: the existing launch validator remains warn-only. Coordinator overrides and virtual model registration are **not implemented yet**—enabling `taskOverrides` or `virtualModels` is rejected. A `coordinator` route is reserved/stored with a warning and does not switch the parent. See the [routing plan](docs/MODEL-ROUTING-PLAN.md) and [compatibility evidence](docs/ROUTING-COMPATIBILITY-SPIKE.md).
+Resolution reports policy path/content revision, catalog provenance, pin metadata and a unique immutable decision. Explicit physical role-model assignments are pins by default; a version-2 role may explicitly use `"locked": false` to permit task overrides. A locked route or operator/session pin rejects a requested override with `resolve-first`, even if its tier label is unchanged. The resolver reports requested launch thinking separately from provider-effective thinking, which remains unobserved until dispatch.
+
+#### Task-scoped tier requests
+
+To opt in, deliberately add `"version": 2` and `"taskOverrides": { "enabled": true, "allowedTiers": ["heavy", "standard", "light"] }` to your routing policy, preserving your configured tier models. No automatic migration is performed. Then resolve each bounded assignment independently:
+
+```json
+{
+  "action": "resolve-model",
+  "agent": "gsd-planner",
+  "taskId": "phase-3-reference-update",
+  "tier": "light"
+}
+```
+
+`tier` and `taskId` apply only to `resolve-model`. A tier request requires exactly one target and a task label of 1–128 characters (letters, digits, `.`, `_`, `:`, `-`, starting with a letter or digit). Only explicitly allowed tiers are accepted, not arbitrary model IDs. The selected tier replaces the whole role default model/thinking/fallback selection; it does not retain unrelated role-level values. Task labels without a tier preserve ordinary routing. Repeated labels receive distinct decision IDs, so concurrent same-role tasks do not overwrite one another. Keep tiny work inline and preserve upstream authorization, role instructions, output ownership and verification requirements.
+
+Pass the exact returned physical model per child. Resolution never switches the parent, persists policy or launches a child. IDs are correlation only—not permissions or additional pi-subagents parameters. The **warn-only** advisory retains at most 128 decisions for five minutes within the current turn/session/branch and resolution cwd. It consumes only an unambiguously associated legacy direct-role attempt; generic workers, task-scoped or scripted launches, and differing child cwd report validation as unavailable instead of guessing or clearing unrelated records. Policy changes require fresh resolution; recorded decisions are never silently rerouted.
+
+Virtual model registration is **not implemented yet**—enabling `virtualModels` is rejected. A `coordinator` route is reserved/stored with a warning and does not switch the parent. See the [routing plan](docs/MODEL-ROUTING-PLAN.md) and [compatibility evidence](docs/ROUTING-COMPATIBILITY-SPIKE.md). Reload Pi after updating the extension to expose the new tool fields.
 
 Use `/gsd-model agent gsd-planner` to explicitly switch the current Pi session model/thinking level when the route resolves to an available configured model. It does not persist configuration or arm child routing. Use `/gsd-model-config heavy`, `standard`, or `light` to select an available provider-qualified model, thinking level, and fallback policy and save it to `.pi-gsd/model-routing.json`. Set `fallback: "prompt"` to require a user choice before delegation when a configured model is unavailable; chosen `/gsd-model` fallbacks are remembered per target for the current extension session.
 
@@ -161,7 +180,7 @@ Set either value to `"off"` to make `pi-gsd` treat that integration as unavailab
 
 Set `diagnostics.sessionLog` to `"on"` to record a capped, argument-free command outcome log at `.pi-gsd/diagnostics.jsonl`. It is opt-in, best-effort support data—not GSD workflow state—and `/gsd-status` reports whether it is enabled. Keep it off for projects that do not need local troubleshooting history.
 
-Set `safety.upstreamGuards` to `"on"` to opt into two package-local, upstream-owned hard guards: catastrophic whole-file shrink protection for curated `.planning/` artifacts and cross-root writes from GSD-managed worktrees. pi-gsd maps only verified block results; missing scripts, timeouts, crashes, malformed output, and adapter errors fail open. Other official lifecycle bridges remain disabled because they are Claude-specific, inert under Pi, or lack a semantics-preserving Pi event mapping.
+Set `safety.upstreamGuards` to `"on"` to opt into two package-local, upstream-owned hard guards: catastrophic whole-file shrink protection for curated `.planning/` artifacts and cross-root writes from GSD-managed worktrees. pi-gsd maps only verified block results; missing scripts, timeouts, crashes, malformed output, and adapter errors fail open. Guard subprocesses use upstream's 120-second blocking budget rather than cutting off its 5-second Git probes. Timeout and bounded, control-character-sanitized stderr diagnostics go to the host's stderr; cancellation still returns promptly. Other official lifecycle bridges remain disabled because they are Claude-specific, inert under Pi, or lack a semantics-preserving Pi event mapping.
 
 ### context-mode
 
@@ -239,8 +258,9 @@ Run `/reload` after editing extension code, or restart Pi. Local package install
 ## More documentation
 
 - [Design notes](docs/DESIGN.md)
-- [Coordinator-directed model routing implementation plan](docs/MODEL-ROUTING-PLAN.md) — physical policy foundation plus independently gated later features
+- [Coordinator-directed model routing implementation plan](docs/MODEL-ROUTING-PLAN.md) — task-scoped physical routing plus independently gated virtual/worktree features
 - [Routing compatibility spike](docs/ROUTING-COMPATIBILITY-SPIKE.md) — reproducible evidence, supported boundaries and upstream blockers
+- [Standalone virtual-model routing design](docs/VIRTUAL-MODEL-MVP-RESEARCH.md) — proposed reusable library/extension, classifier-shaped policies, automatic selection and explicit effort overrides; not implemented
 - [Usage guide](docs/USAGE.md)
 - [Maintenance and compatibility playbook](docs/MAINTENANCE.md)
 - [Upstream Pi-integration proposals](docs/UPSTREAM-PROPOSALS.md)

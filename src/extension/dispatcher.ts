@@ -18,6 +18,7 @@ import {
   type PiModelLike,
   type PiModelRegistryLike,
   type ResolveModelRoutingRequest,
+  type ResolvedModelRouting,
 } from "./model-routing.ts";
 
 export type PiExecResult = {
@@ -73,6 +74,7 @@ export type GsdDispatchResult = {
   details: {
     caps: Capabilities;
     core?: GsdCoreDiagnostics;
+    modelRouting?: ResolvedModelRouting;
   };
 };
 
@@ -333,7 +335,8 @@ function formatDoctor(
     ...(caps.subagents
       ? [
           "- Use `subagent({ action: \"list\" })` before selecting pi-subagents agents or chains.",
-          "- Resolve each distinct GSD agent role and pass the exact pi-subagents consumer `model` when its action is `pass-model`; inherited routes intentionally produce a suffixed launch snapshot too.",
+          "- Resolve each bounded GSD assignment with its exact agent and taskId. Opt-in version-2 policy may allow a task tier; pass the exact physical consumer `model` per child for `pass-model`, including suffixed inherited snapshots.",
+          "- The routing guard is advisory: task/script association may be unavailable. Decision IDs are correlation, not permissions or extra subagent parameters; no top-level workflow default proves per-child routing.",
           "- Do not make the `gsd` tool call `subagent` internally in v1.",
           "- Do not run nested subagents unless the selected subagent is explicitly intended to orchestrate.",
         ]
@@ -373,7 +376,7 @@ function formatDoctor(
     "- Use upstream `gsd-core` behavior through `gsd-tools`; do not fork or duplicate GSD Core semantics.",
     "- Resolve `gsd-tools` from this Pi package's installed `@opengsd/gsd-core` dependency; do not use system-wide GSD installs for Pi execution.",
     "- If `gsd-core` needs a better machine-readable dispatcher for Pi, contribute that seam upstream and swap only the pi-gsd dispatcher adapter.",
-    "- Immediately before each distinct GSD child role, use `gsd({ action: \"resolve-model\", agent: \"<exact-agent-name>\" })` and obey its child consumer action.",
+    "- Immediately before each bounded GSD assignment, use `gsd({ action: \"resolve-model\", agent: \"<exact-agent-name>\", taskId: \"<assignment-label>\" })` and obey its consumer action. Add an allowed `tier` only when version-2 taskOverrides is enabled.",
     "- `/gsd-model` changes only the current Pi session; `/gsd-model-config` persists tier routes in `.pi-gsd/model-routing.json`.",
     "- Keep GSD Core `resolve_model_ids` omitted/inherited under Pi unless you intentionally configured a non-Pi GSD runtime.",
     ...integrationGuidance,
@@ -590,10 +593,10 @@ export function createGsdDispatcher(options: GsdDispatcherOptions = {}): GsdDisp
 
     async resolveModel(request, cwd, modelContext) {
       const resultDetails = details(cwd);
-      const resolved = resolveModelRouting(request, { cwd, ...modelContext });
+      const resolved = resolveModelRouting(request, { packageRoot, ...modelContext, cwd });
       return {
         text: formatResolvedModelRouting(resolved),
-        details: resultDetails,
+        details: { ...resultDetails, modelRouting: resolved },
       };
     },
 

@@ -10,6 +10,7 @@ import { Type } from "typebox";
 
 import { registerContextModeGuard } from "./context-mode-guard.ts";
 import { registerPiGsdCore } from "./register.ts";
+import { TASK_ID_PATTERN } from "./model-routing-policy.ts";
 import { registerUpstreamSafetyGuard } from "./upstream-safety-guard.ts";
 
 const TOOL_PARAMS = Type.Object(
@@ -43,6 +44,15 @@ const TOOL_PARAMS = Type.Object(
     command: Type.Optional(
       Type.String({
         description: "GSD command id to resolve.",
+      }),
+    ),
+    tier: Type.Optional(StringEnum(["heavy", "standard", "light"] as const)),
+    taskId: Type.Optional(
+      Type.String({
+        minLength: 1,
+        maxLength: 128,
+        pattern: TASK_ID_PATTERN,
+        description: "For resolve-model: bounded assignment label (correlation only). Required when requesting a tier override; policy must explicitly allow it.",
       }),
     ),
     force: Type.Optional(

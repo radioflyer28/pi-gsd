@@ -122,9 +122,11 @@ test("config command prompt expansion injects Pi config update requirements", ()
   assert.match(prompt, /GSD CLI operation \(`gsd-tools`, `gsd_run`, or direct `node \.\.\.\/gsd-tools\.cjs`\)/);
   assert.match(prompt, /Never execute a bare `gsd-tools`\/`gsd_run`/);
   assert.match(prompt, /direct `node \.\.\.\/gsd-tools\.cjs` command/);
-  assert.match(prompt, /Before launching each distinct upstream GSD subagent role/);
-  assert.match(prompt, /resolve-model.*exact-gsd-agent-name/);
-  assert.match(prompt, /pass-model.*exact suffixed model/);
+  assert.match(prompt, /Before each bounded upstream GSD child assignment/);
+  assert.match(prompt, /resolve-model.*exact-gsd-agent-name.*taskId/);
+  assert.match(prompt, /version-2 policy allows.*tier/);
+  assert.match(prompt, /output ownership and verification expectations/);
+  assert.match(prompt, /pass-model.*exact suffixed physical model/);
   assert.match(prompt, /resolve-first.*do not delegate/);
 });
 

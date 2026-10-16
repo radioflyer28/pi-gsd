@@ -6,7 +6,22 @@ import { defaultPackageRoot, detectCapabilities } from "./capabilities.ts";
 import { loadPiGsdConfig } from "./config.ts";
 
 const MAX_HOOK_OUTPUT = 64 * 1024;
-const HOOK_TIMEOUT_MS = 4_000;
+// GSD Core's blocking guards allow up to three 5s Git probes and use a
+// 120s host budget. Do not cut off their containment decision after 4s.
+export const UPSTREAM_GUARD_TIMEOUT_MS = 120_000;
+const MAX_GUARD_DIAGNOSTIC = 2_048;
+
+export type UpstreamGuardDiagnostic = {
+  kind: "timeout" | "stderr" | "error" | "output-limit";
+  script: string;
+  message: string;
+};
+
+type GuardRunOptions = {
+  /** A shorter bounded budget is useful for process-seam tests. */
+  timeoutMs?: number;
+  onDiagnostic?: (diagnostic: UpstreamGuardDiagnostic) => void;
+};
 
 export type UpstreamGuardResult = { block: true; reason: string } | undefined;
 export type UpstreamGuardRunner = (
@@ -45,15 +60,37 @@ export function runUpstreamGuard(
   payload: Record<string, unknown>,
   cwd: string,
   signal?: AbortSignal,
+  options: GuardRunOptions = {},
 ): Promise<UpstreamGuardResult> {
+  if (signal?.aborted) return Promise.resolve(undefined);
+  const requestedTimeout = options.timeoutMs ?? UPSTREAM_GUARD_TIMEOUT_MS;
+  const timeoutMs = Number.isFinite(requestedTimeout)
+    ? Math.max(1, Math.min(requestedTimeout, UPSTREAM_GUARD_TIMEOUT_MS))
+    : UPSTREAM_GUARD_TIMEOUT_MS;
+  const diagnose = (kind: UpstreamGuardDiagnostic["kind"], message: string) => {
+    const diagnostic = {
+      kind,
+      script: path.basename(scriptPath).replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").slice(0, 128),
+      message: message.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").slice(0, MAX_GUARD_DIAGNOSTIC),
+    };
+    try {
+      if (options.onDiagnostic) options.onDiagnostic(diagnostic);
+      else console.warn(`[pi-gsd upstream guard] ${diagnostic.script} ${kind}: ${diagnostic.message}`);
+    } catch {
+      // Diagnostics must never change a guard decision or fail-open behavior.
+    }
+  };
   return new Promise((resolve) => {
     let settled = false;
+    let terminated = false;
     let stdout = "";
+    let stderr = "";
     const finish = (result?: UpstreamGuardResult) => {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
       signal?.removeEventListener("abort", abort);
+      if (stderr.trim()) diagnose("stderr", stderr);
       resolve(result);
     };
     const child = spawn(process.execPath, [scriptPath], {
@@ -63,20 +100,37 @@ export function runUpstreamGuard(
       stdio: ["pipe", "pipe", "pipe"],
     });
     const abort = () => {
+      if (settled || terminated) return;
+      terminated = true;
       child.kill();
-      finish(undefined);
+      // Resolve on close, not immediately after sending the signal: otherwise a
+      // Windows child can still hold its cwd and pipes after this promise ends.
     };
-    const timeout = setTimeout(abort, HOOK_TIMEOUT_MS);
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      diagnose("timeout", `Exceeded ${timeoutMs}ms; allowing call because guard outcome is unknown.`);
+      abort();
+    }, timeoutMs);
     signal?.addEventListener("abort", abort, { once: true });
-    child.once("error", () => finish(undefined));
-    child.stdin.on("error", () => finish(undefined));
-    child.stderr.resume();
+    child.once("error", (error) => {
+      if (!settled) diagnose("error", error.message);
+      finish(undefined);
+    });
+    child.stdin.on("error", () => abort());
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk) => {
+      stderr = (stderr + String(chunk)).slice(0, MAX_GUARD_DIAGNOSTIC);
+    });
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (chunk) => {
+      if (settled || terminated) return;
       stdout += String(chunk);
-      if (stdout.length > MAX_HOOK_OUTPUT) abort();
+      if (stdout.length > MAX_HOOK_OUTPUT) {
+        diagnose("output-limit", "Guard stdout exceeded 64 KiB; allowing call because guard outcome is unknown.");
+        abort();
+      }
     });
-    child.once("close", () => finish(parseBlock(stdout)));
+    child.once("close", () => finish(terminated ? undefined : parseBlock(stdout)));
     if (signal?.aborted) abort();
     else child.stdin.end(JSON.stringify(payload));
   });

@@ -242,7 +242,7 @@ test("registered tool resolves Pi-native model routing with inherit fallback", a
   assert.match(toolText(result), /target: `gsd-planner`/);
   assert.match(toolText(result), /tier: heavy/);
   assert.match(toolText(result), /resolved model: openai\/gpt-5\.3-codex/);
-  assert.match(toolText(result), /resolved thinking: xhigh/);
+  assert.match(toolText(result), /launch thinking request: xhigh/);
 });
 
 test("gsd-model-config interactively writes a provider-neutral tier route", async () => {
@@ -303,12 +303,12 @@ test("warn-only validator checks and consumes freshly resolved child routes", as
     });
     const warnings: string[] = [];
     const handler = pi.handlers.get("tool_call")![0];
-    const outcome = await handler({ toolName: "subagent", input: { agent: "delegate" } }, { cwd, ui: { notify: (message: string) => warnings.push(message) } });
+    const outcome = await handler({ toolName: "subagent", input: { agent: "gsd-codebase-mapper" } }, { cwd, ui: { notify: (message: string) => warnings.push(message) } });
     assert.equal(outcome, undefined);
     assert.match(warnings.join("\n"), /expected exact model `openai\/current:medium`/);
 
     warnings.length = 0;
-    await handler({ toolName: "subagent", input: { agent: "delegate" } }, { cwd, ui: { notify: (message: string) => warnings.push(message) } });
+    await handler({ toolName: "subagent", input: { agent: "gsd-codebase-mapper" } }, { cwd, ui: { notify: (message: string) => warnings.push(message) } });
     assert.equal(warnings.length, 0, "pending route should be consumed after one launch attempt");
   } finally {
     fs.rmSync(cwd, { recursive: true, force: true });
@@ -328,7 +328,7 @@ test("warn-only validator accepts exact model and ignores management calls", asy
       model: { provider: "openai", id: "current" },
       modelRegistry: { getAvailable: () => [{ provider: "openai", id: "current" }] },
     });
-    await handler({ toolName: "subagent", input: { agent: "delegate", model: "openai/current:medium" } }, { cwd, ui: { notify: (message: string) => warnings.push(message) } });
+    await handler({ toolName: "subagent", input: { agent: "gsd-codebase-mapper", model: "openai/current:medium" } }, { cwd, ui: { notify: (message: string) => warnings.push(message) } });
     assert.deepEqual(warnings, []);
   } finally {
     fs.rmSync(cwd, { recursive: true, force: true });
