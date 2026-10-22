@@ -14,6 +14,8 @@ import {
 import { detectCapabilities, type Capabilities, type ExistsProbe } from "./capabilities.ts";
 import { appendPiGsdDiagnostic } from "./diagnostics.ts";
 import { MAX_PENDING_ROUTES, RoutingAdvisory } from "./routing-advisory.ts";
+import { SUBAGENT_CAPABILITY_GUIDELINES } from "./subagent-guidance.ts";
+import { formatGsdRuntimeAgentStatus, registerGsdRuntimeAgents, type RuntimeAgentHost } from "./runtime-agents.ts";
 import {
   discoverGsdCoreCommands,
   expandGsdCoreCommandPrompt,
@@ -39,7 +41,7 @@ export type PiToolResult = {
   details: GsdDispatchResult["details"];
 };
 
-export type RegisterablePiApi = {
+export type RegisterablePiApi = RuntimeAgentHost & {
   registerTool?: (tool: Record<string, unknown>) => void;
   registerCommand?: (name: string, command: Record<string, unknown>) => void;
   getActiveTools?: () => string[];
@@ -530,16 +532,26 @@ export function registerPiGsdCore(pi: RegisterablePiApi, options: RegisterPiGsdO
     epoch: 0,
   };
   const gsdCoreCommands = options.gsdCoreCommands ?? discoverGsdCoreCommands({ packageRoot: options.packageRoot, exists: options.exists });
-  const dispatcher =
-    options.dispatcher ??
-    createGsdDispatcher({
-      exec: pi.exec?.bind(pi),
-      exists: options.exists,
-      packageRoot: options.packageRoot,
-      gsdToolsCommand: options.gsdToolsCommand,
-      truncateOutput: options.truncateOutput,
-      detect,
-    });
+  const runtimeAgents = registerGsdRuntimeAgents(pi, { packageRoot: options.packageRoot });
+  const baseDispatcher = options.dispatcher ?? createGsdDispatcher({
+    exec: pi.exec?.bind(pi),
+    exists: options.exists,
+    packageRoot: options.packageRoot,
+    gsdToolsCommand: options.gsdToolsCommand,
+    truncateOutput: options.truncateOutput,
+    detect,
+  });
+  const dispatcher: GsdDispatcher = {
+    ...baseDispatcher,
+    async status(...args) {
+      const result = await baseDispatcher.status(...args);
+      return { ...result, text: result.text + formatGsdRuntimeAgentStatus(runtimeAgents()) };
+    },
+    async doctor(...args) {
+      const result = await baseDispatcher.doctor(...args);
+      return { ...result, text: result.text + formatGsdRuntimeAgentStatus(runtimeAgents()) };
+    },
+  };
 
   pi.registerTool?.({
     name: "gsd",
@@ -557,6 +569,7 @@ export function registerPiGsdCore(pi: RegisterablePiApi, options: RegisterPiGsdO
       "Keep tiny work inline when delegation overhead is greater. Preserve upstream role instructions and delegation authorization; hand off bounded inputs, output ownership and verification expectations, not a replacement GSD workflow.",
       "Decision/task IDs are correlation only, not subagent tool arguments or permissions. Pass each physical model per child. Task-scoped or scripted launch association may be unavailable; do not infer successful validation from a top-level workflow model.",
       "Use pi-subagents directly for large planning/execution/review when available; do not expect the `gsd` tool to orchestrate subagents internally.",
+      ...SUBAGENT_CAPABILITY_GUIDELINES,
     ],
     parameters: options.parameters,
     execute: (

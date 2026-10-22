@@ -154,7 +154,7 @@ test("dispatcher doctor includes integration and state-boundary guidance", async
   const result = await dispatcher.doctor(process.cwd());
 
   assert.match(result.text, /do not fork or duplicate GSD Core semantics/i);
-  assert.match(result.text, /subagent\(\{ action: "list" \}\)/);
+  assert.match(result.text, /subagent\(\{ action: "list", options: \{ capabilities: true \} \}\)/);
   assert.match(result.text, /ctx_execute/);
   assert.match(result.text, /## Model routing audit/);
   assert.match(result.text, /heavy \(gsd-planner\)/);

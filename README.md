@@ -204,11 +204,13 @@ This guard is meant to prevent accidental misuse, not to stop deliberate user-di
 
 ### pi-subagents
 
-When `pi-subagents` is loaded, `pi-gsd` reports it and instructs agents to call `subagent({ action: "list" })` before selecting agents or chains.
+When `pi-subagents` is loaded, `pi-gsd` reports current-session availability—not selected child readiness—and instructs agents to call `subagent({ action: "list", options: { capabilities: true } })` before selecting any GSD child. Check its selected source, effective tools and provider configuration against the assignment; listing does not prove child provider registration.
 
 The `gsd` tool does not call subagents internally. Large planning, execution, review, and verification work should use `pi-subagents` directly from the parent agent when appropriate.
 
 Before delegating each distinct GSD subagent role, agents should call `gsd({ action: "resolve-model", agent: "<exact-gsd-agent-name>" })` and obey the returned pi-subagents consumer action. `pass-model` means pass its exact suffixed `model`; `omit-model` means omit it; `resolve-first` means do not delegate until the route is corrected or the requested user choice is made. Default routes still use the current parent model. A warn-only `tool_call` validator checks the next GSD child launch against freshly resolved guidance without mutating or blocking pi-subagents.
+
+Planning, execution, verification, review and research children all need assignment-specific capability checks. Any assignment performing GSD operations needs a profile that both allowlists `gsd` and loads pi-gsd in the child; the generic builtin `worker` does not include it. Model resolution grants no tools. Use editing tools and a platform shell only when the assignment requires them. The current `gsd` tool has mutating actions and no per-action permission restriction: a read-only role label does not restrict it. Inspection-only helpers should omit GSD, shell and write tools rather than inherit them automatically. See [GSD subagent profile setup and verification](docs/SUBAGENT-PROFILES.md) for operational and inspection-only templates, codemode guidance, and role-specific handoffs. Missing or unknown capabilities mean keep the assignment inline, not relay routine commands. Managed jobs and coordinator/nested-delegation capabilities require separate policy/configuration. At parent startup, compatible pi-subagents installations receive real runtime registrations for `gsd-planner`, `gsd-executor`, `gsd-verifier`, `gsd-plan-checker` and `gsd-code-reviewer`, equipped with `gsd`, codemode, the platform shell and explicit child provider paths. Select those exact roles rather than generic workers. Status/doctor report registration failures separately from child readiness. No local profile files are installed or overwritten; additional/custom templates remain operator-controlled.
 
 ### Upstream Pi plugin coexistence
 

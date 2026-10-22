@@ -274,10 +274,12 @@ Use `pi-subagents` for work that benefits from fresh context or parallelism:
 Before selecting agents or chains, ask Pi to list available subagents:
 
 ```json
-{ "action": "list" }
+{ "action": "list", "options": { "capabilities": true } }
 ```
 
-`pi-gsd` does not call subagents internally. The parent agent should decide when delegation is useful.
+`pi-gsd` does not call subagents internally. The parent agent should decide when delegation is authorized and useful. Status/doctor report current-session integrations, not a selected child's readiness. Check the selected profile source, effective tools, provider configuration, exclusions and ceilings. Listing describes configuration, not proof that providers registered.
+
+Apply capability checks to planning, execution, verification, review and research children alike. GSD operations require both an allowlisted `gsd` tool and pi-gsd loaded in the child; the generic builtin `worker` lacks it. Include editing tools or a platform shell only for assignments that need writes/tests. The current `gsd` tool is write-capable with no per-action permission restriction; `acceptanceRole: read-only` does not make it safe for inspection-only work. Follow the [subagent profile setup and verification guide](SUBAGENT-PROFILES.md) for operational Unix/WSL and Windows profiles and an inspection-only profile. Bind the actual upstream role and resolved model separately from the runtime profile; do not route every child as `gsd-executor`. Do not omit required upstream steps to fit a restricted profile. Missing or unknown capabilities mean keep the assignment inline, not relay routine commands. Managed jobs and phase/nested coordination require separate policy/configuration. Core roles (`gsd-planner`, `gsd-executor`, `gsd-verifier`, `gsd-plan-checker`, `gsd-code-reviewer`) are automatically registered with explicit tools/providers through the optional owner's runtime-agent event API. Select those exact names and check registration in status/doctor. No local profile files are installed or overwritten.
 
 Before delegating GSD-specific work, resolve routing through the shared resolver:
 

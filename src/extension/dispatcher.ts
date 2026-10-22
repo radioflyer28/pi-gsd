@@ -6,6 +6,7 @@ import * as path from "node:path";
 import { type Capabilities, defaultPackageRoot, detectCapabilities, type ExistsProbe } from "./capabilities.ts";
 import { DEFAULT_PI_GSD_CONFIG, getPiGsdConfigPath } from "./config.ts";
 import { getPiGsdDiagnosticSummary, type PiGsdDiagnosticSummary } from "./diagnostics.ts";
+import { CHILD_TOOL_READINESS, SUBAGENT_CAPABILITY_GUIDELINES } from "./subagent-guidance.ts";
 import { inspectGsdCoreCommands, type GsdCoreCommandInspection } from "./gsd-core-commands.ts";
 import {
   DEFAULT_MODEL_ROUTING_CONFIG,
@@ -219,6 +220,8 @@ export function formatCapabilities(
     `- upstream command files: ${core ? `${core.commandInspection.commands.length}${core.commandInspection.warnings.length > 0 ? ` (${core.commandInspection.warnings.length} warning${core.commandInspection.warnings.length === 1 ? "" : "s"})` : ""}` : "unknown"}`,
     `- gsd-tools path: ${caps.paths.gsdTools ?? "not detected"}`,
     `- pi-subagents: ${formatIntegrationStatus("subagents", caps)}`,
+    "- integration scope: current Pi session only",
+    `- child tool readiness: ${CHILD_TOOL_READINESS}`,
     `- context-mode: ${formatIntegrationStatus("contextMode", caps)}`,
     `- upstream GSD Pi plugin: ${upstreamStatus}`,
     `- upstream safety guards: ${caps.safetySettings.upstreamGuards === "on" ? "enabled" : "off"}`,
@@ -334,7 +337,7 @@ function formatDoctor(
   const integrationGuidance = [
     ...(caps.subagents
       ? [
-          "- Use `subagent({ action: \"list\" })` before selecting pi-subagents agents or chains.",
+          ...SUBAGENT_CAPABILITY_GUIDELINES.map((line) => `- ${line}`),
           "- Resolve each bounded GSD assignment with its exact agent and taskId. Opt-in version-2 policy may allow a task tier; pass the exact physical consumer `model` per child for `pass-model`, including suffixed inherited snapshots.",
           "- The routing guard is advisory: task/script association may be unavailable. Decision IDs are correlation, not permissions or extra subagent parameters; no top-level workflow default proves per-child routing.",
           "- Do not make the `gsd` tool call `subagent` internally in v1.",
@@ -353,7 +356,7 @@ function formatDoctor(
         ]
       : []),
     ...(caps.subagents && caps.contextMode
-      ? ["- In combined mode, let the parent GSD flow use `subagent`; child agents may use `ctx_*` tools when context-mode is loaded."]
+      ? ["- In combined mode, let the parent GSD flow use `subagent`; child agents may use `ctx_*` tools only when their own tool policy permits them and their child session loads the provider."]
       : []),
   ];
 

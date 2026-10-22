@@ -1,3 +1,4 @@
+import { CHILD_TOOL_READINESS } from "./subagent-guidance.ts";
 import { createHash, randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -598,6 +599,7 @@ export function formatResolvedModelRouting(result: ResolvedModelRouting): string
   lines.push("", "## pi-subagents consumer", "", `- action: ${result.subagent.action}`);
   if (result.subagent.model) lines.push(`- pass model: \`${result.subagent.model}\``);
   lines.push(`- note: ${result.subagent.note}`);
+  lines.push(`- child tool readiness: ${CHILD_TOOL_READINESS}`);
 
   if (result.warnings.length > 0) {
     lines.push("", "## Warnings", "", ...result.warnings.map((warning) => `- ${warning}`));

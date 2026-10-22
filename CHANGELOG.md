@@ -4,6 +4,16 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-22
+
+### Fixed
+
+- Distinguish current-session subagent availability and resolved models from unverified child tool/provider readiness in status, doctor, model results, tool guidelines and expanded GSD commands. Require assignment-specific capability checks for planning, execution, verification, review and research children, or inline execution instead of a silent parent command relay; preserve generic worker restrictions and optional integrations.
+
+### Added
+
+- Operator-configured Unix/WSL and native Windows operational subagent templates plus a tool-minimized inspection-only template. They separate upstream role/model handoffs from runtime tool/provider policy, permit native codemode, and document per-capability child canaries, write-capable GSD actions, explicit coordinator boundaries and optional managed jobs. Deferred-tool discovery and inherited skills remain opt-in. The old executor-guide link forwards to the generalized setup guide. Core planner, executor, verifier, plan-checker and code-reviewer definitions now register through the optional pi-subagents runtime-agent event API, with current upstream instructions, explicit GSD/codemode/shell tools and child provider paths; registration failures are visible and partial registration rolls back. Local profile files remain untouched.
+
 ## [0.3.0] - 2026-10-16
 
 ### Changed

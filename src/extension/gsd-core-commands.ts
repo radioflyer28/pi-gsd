@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { defaultPackageRoot, type ExistsProbe } from "./capabilities.ts";
+import { SUBAGENT_CAPABILITY_GUIDELINES } from "./subagent-guidance.ts";
 
 export type GsdCoreCommand = {
   slashName: string;
@@ -26,7 +27,7 @@ export type GsdCoreCommandInspection = {
   warnings: string[];
 };
 
-function parseFrontmatter(markdown: string): { fields: Record<string, string>; body: string } {
+export function parseFrontmatter(markdown: string): { fields: Record<string, string>; body: string } {
   const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/m.exec(markdown);
   if (!match) return { fields: {}, body: markdown };
 
@@ -139,7 +140,7 @@ function packageLocalGsdCoreRoot(commandPath: string): string {
   return path.resolve(path.dirname(commandPath), "..", "..", "gsd-core");
 }
 
-function piExecutionGuidance(): string[] {
+export function piExecutionGuidance(): string[] {
   return [
     "",
     "## Pi execution contract",
@@ -150,6 +151,7 @@ function piExecutionGuidance(): string[] {
     "- Before each bounded upstream GSD child assignment, call `gsd({ action: \"resolve-model\", agent: \"<exact-gsd-agent-name>\", taskId: \"<bounded-assignment-label>\" })`. If version-2 policy allows, add `tier: \"heavy\"`, `\"standard\"` or `\"light\"` for that assignment. Obey its consumer action: `pass-model` means pass the exact suffixed physical model, `omit-model` means omit it, and `resolve-first` means do not delegate yet.",
     "- Keep tiny work inline when delegation would cost more. Preserve upstream role instructions and authorization; bound each helper's inputs, output ownership and verification expectations. Do not invent extra workflow steps to create cheap work.",
     "- Task/decision IDs are correlation only, not launch-tool parameters. Pass each model per child; scripted/task-scoped launch association is not verified by the advisory guard and a workflow's top-level model is not per-child evidence.",
+    ...SUBAGENT_CAPABILITY_GUIDELINES.map((line) => `- ${line}`),
   ];
 }
 

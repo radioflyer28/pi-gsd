@@ -132,14 +132,16 @@ The guard should stay conservative. It should block only high-risk accidental be
 
 ### pi-subagents
 
-Use `pi-subagents` for fresh-context and parallel work. The parent agent should call `subagent({ action: "list" })` before selecting agents or chains.
+Use `pi-subagents` for fresh-context and parallel work. Before selecting any GSD child, inspect `subagent({ action: "list", options: { capabilities: true } })`. Integration detection describes the current Pi session only; neither that inventory nor model resolution establishes selected child tool/provider readiness. Status, doctor and model-routing text explicitly leave child tool readiness unverified. Shared tool and command guidance requires an appropriate profile or inline execution, not a supervisor command relay.
 
 `pi-gsd` does not call `subagent` internally. Large GSD planning, execution, review, and verification can use `pi-subagents` directly from the parent model when status or doctor output reports it as available. A cwd-scoped, warn-only `tool_call` validator compares the next launch with freshly resolved consumer guidance, consumes that pending contract, and fails open; it never mutates, blocks, or launches children.
+
+Capability checks apply to planning, execution, verification, review and research assignments, not just executors. Profiles performing GSD operations must both allowlist `gsd` and load pi-gsd in the child. A generic `worker` remains restricted. Operator-configured [subagent profiles](SUBAGENT-PROFILES.md) bind tools/providers without packaging GSD role agents or duplicating workflow semantics. Operational profiles can serve different upstream roles with separately supplied current instructions and model routes. Inspection-only profiles omit GSD, shell and write tools: `gsd` has mutating actions, no per-action permission restriction, and a read-only acceptance label is not access enforcement. Assignments needing validation use a platform shell for bounded foreground work; managed jobs and their lifetime verification remain separate opt-ins. Coordination/nested delegation requires separate authorization and configuration. Capability listings describe configuration, not actual registration. The adapter now registers core native role definitions through pi-subagents' supported event API at parent startup and disposes them at shutdown/reload. It does not import pi-subagents preflight, inspect launch registries, mutate local profile files, or replace the owner's launch gate.
 
 In combined mode, the preferred pattern is:
 
 1. The parent GSD flow uses subagents for delegation.
-2. Child agents use context-mode tools when they need context-efficient processing.
+2. Child agents use context-mode tools when they need context-efficient processing and their own tool policy and provider loading permit them.
 3. Nested subagents are avoided unless the selected subagent is explicitly intended to orchestrate.
 
 ## Proposed reusable model-routing dependency
@@ -171,7 +173,7 @@ When `diagnostics.sessionLog` is explicitly enabled, `.pi-gsd/diagnostics.jsonl`
 - Publish `@opengsd/gsd-core` as a regular dependency of `pi-gsd`.
 - Keep `context-mode` and `pi-subagents` as separately installed Pi packages.
 - Support project-local `auto`/`off` integration masks in `.pi-gsd/config.json` without disabling those Pi packages globally.
-- Do not ship packaged `gsd.planner`, `gsd.executor`, or `gsd.reviewer` agents in v1.
+- Do not vendor upstream role prompts or add a second orchestrator. Thin native runtime registrations for core GSD roles may bind tools/providers and read current package-local upstream instructions through the optional pi-subagents event API.
 - Keep context-mode usage selective and guardrail-driven rather than adding a broad aggressiveness configuration.
 - Keep GSD Core `resolve_model_ids` omitted/inherited under Pi by default; Pi-native model resolution belongs to `pi-gsd` because Pi can run arbitrary providers and custom model IDs.
 - For the pi-subagents consumer block, snapshot an inherited Pi model and append the routed thinking suffix. pi-subagents' public per-run surface applies and displays thinking through that model suffix; do not expose a nonexistent standalone child thinking argument.
