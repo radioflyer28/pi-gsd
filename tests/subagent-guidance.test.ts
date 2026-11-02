@@ -34,8 +34,9 @@ function assertCapabilityGuidance(text: string) {
   assert.match(text, /`tool_search` is separate and optional/);
   assert.match(text, /Verify permitted tools through codemode in the child canary/);
   assert.match(text, /no inherited skills catalog is required/);
-  assert.match(text, /missing or unknown, keep the assignment inline/);
-  assert.match(text, /do not silently substitute a parent command-running relay/);
+  assert.match(text, /missing or unknown, stop the required child step/);
+  assert.match(text, /inline only when upstream permits inline execution/);
+  assert.match(text, /Do not silently substitute a parent command-running relay/);
   assert.match(text, /one-writer boundaries.*user approvals.*upstream verification.*independent acceptance/);
   assert.match(text, /Phase coordination and nested delegation require separate explicit authorization and tool configuration/);
   assert.match(text, /Do not enable nested orchestration or widen generic profiles/);

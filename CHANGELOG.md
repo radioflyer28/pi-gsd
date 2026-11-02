@@ -4,6 +4,22 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [1.19.0-pi.1] - 2026-11-02
+
+### Changed
+
+- Align release versions with the exact GSD Core dependency: `1.19.0-pi.1` pins GSD Core `1.19.0`; adapter-only fixes increment `pi.N`. Release validation checks the declared, locked and installed Core versions.
+- Remove repository-local automatic package loading to avoid conflicts with a user-wide pi-gsd installation.
+- Raise the package-local GSD Core dependency baseline to exactly 1.19.0. Consume upstream workflow, role and guard updates through the existing CLI/resource seams; retain the Pi >=1.0.0 peer minimum and Node.js >=24 requirement.
+- Keep upstream's newly package-installable Pi extension, native `gsd_dispatch` and lifecycle hook bridge separate from pi-gsd. The adapter continues to own its commands, model routing and optional pi-subagents runtime profiles; upstream guards remain opt-in.
+
+### Added
+
+- Reviewed native leaf profiles expanded from five to 33, preserving canonical role bodies and declaration-based file/shell grants (including block-list tool declarations). Nested debug coordination and browser-only DOM verification have explicit exclusions.
+- Preserve the canonical GSD Core command/role/CLI wrapping boundary. Dedicated upstream Pi skill and debug/checkpoint adaptations remain deferred rather than adding another maintenance surface.
+- Tested workflow/role/hook parity matrix and broader-hook failure-policy evaluation. No extra hooks are enabled and existing opt-in guard behavior is unchanged.
+- Integration coverage for the complete bundled command inventory and Pi prompt contract, installed routing-catalog version and native-role coverage, and exact current upstream role bodies in runtime profiles.
+
 ## [0.3.1] - 2026-10-22
 
 ### Fixed

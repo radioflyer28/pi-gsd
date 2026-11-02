@@ -1,6 +1,6 @@
 {
   "name": "pi-gsd",
-  "version": "0.3.1",
+  "version": "1.19.0-pi.1",
   "description": "Pi extension wrapper for @opengsd/gsd-core with optional pi-subagents and context-mode awareness.",
   "type": "module",
   "license": "MIT",
@@ -55,7 +55,7 @@
     "typebox": "*"
   },
   "dependencies": {
-    "@opengsd/gsd-core": "^1.17.0"
+    "@opengsd/gsd-core": "1.19.0"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",

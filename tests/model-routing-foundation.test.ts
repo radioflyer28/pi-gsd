@@ -5,6 +5,8 @@ import * as path from "node:path";
 import test from "node:test";
 
 import { formatModelRoutingAudit, resolveModelRouting, writeModelTierRoute } from "../src/extension/model-routing.ts";
+import { loadAgentRoutingCatalog } from "../src/extension/agent-routing-catalog.ts";
+import { GSD_RUNTIME_ROLES } from "../src/extension/runtime-agents.ts";
 
 function fixture(fn: (cwd: string) => void) {
   const cwd = mkdtempSync(path.join(tmpdir(), "pi-gsd-routing-foundation-"));
@@ -27,6 +29,17 @@ test("upstream catalog discovers roles absent from the old adapter roster", () =
       assert.equal(result.subagent.model, "fixture/current:medium");
     }
   });
+});
+
+test("installed upstream catalog reports its actual version and covers every native role", () => {
+  const manifest = JSON.parse(readFileSync(path.resolve("node_modules/@opengsd/gsd-core/package.json"), "utf8"));
+  const catalog = loadAgentRoutingCatalog();
+  assert.equal(catalog.status, "loaded");
+  assert.equal(catalog.version, manifest.version);
+  assert.deepEqual(catalog.warnings, []);
+  for (const role of GSD_RUNTIME_ROLES) {
+    assert.ok(["heavy", "standard", "light"].includes(catalog.tiers[role]), role);
+  }
 });
 
 test("version 2 defaults to an error rather than an unavailable-model downgrade", () => {

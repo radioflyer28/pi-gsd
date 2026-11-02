@@ -5,8 +5,22 @@ import { defaultPackageRoot } from "./capabilities.ts";
 import { loadPiGsdConfig } from "./config.ts";
 import { parseFrontmatter, piExecutionGuidance } from "./gsd-core-commands.ts";
 
-// A bounded adapter surface, not a copied upstream workflow or model catalog.
-export const GSD_RUNTIME_ROLES = ["gsd-planner", "gsd-executor", "gsd-verifier", "gsd-plan-checker", "gsd-code-reviewer"] as const;
+import { GSD_RUNTIME_ROLES, GSD_EXCLUDED_ROLES } from "./parity.ts";
+export { GSD_RUNTIME_ROLES } from "./parity.ts";
+
+/** Parse only the upstream frontmatter's supported scalar/list tool syntax. */
+export function declaredRoleTools(markdown: string): string[] {
+  const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/.exec(markdown)?.[1];
+  const declaration = frontmatter && /^tools:[ \t]*([^\r\n]*)(?:\r?\n((?:[ \t]+-[ \t]+[^\r\n]+(?:\r?\n|$))*))?/m.exec(frontmatter);
+  if (!declaration) throw new Error("Upstream role has no tools declaration.");
+  const tools = declaration[1].trim()
+    ? declaration[1].split(",").map((tool) => tool.trim())
+    : (declaration[2] ?? "").split(/\r?\n/).filter(Boolean).map((line) => line.replace(/^[ \t]+-[ \t]+/, "").trim());
+  if (!tools.length || tools.some((tool) => !/^[A-Za-z][A-Za-z0-9_*-]*$/.test(tool))) {
+    throw new Error("Unsupported upstream role tools declaration; review before registration.");
+  }
+  return tools;
+}
 export const RUNTIME_AGENT_EVENT = "pi-subagents:runtime-agent-register:v1";
 
 type ToolInfo = { name?: string; exposure?: string; sourceInfo?: { path?: string } };
@@ -22,7 +36,7 @@ export type GsdRuntimeAgentDefinition = {
   tools: string[];
   extensions: string[];
   subagentOnlyExtensions: string[];
-  acceptanceRole: "writer";
+  acceptanceRole: "writer" | "read-only";
   runner: { type: "pi" };
   systemPromptMode: "replace";
   inheritProjectContext: boolean;
@@ -71,10 +85,16 @@ export function buildGsdRuntimeAgents(options: {
     const markdown = fs.readFileSync(rolePath, "utf8");
     const { fields, body } = parseFrontmatter(markdown);
     if (fields.name !== name || !body.trim()) throw new Error(`Invalid package-local upstream role: ${name}`);
-    const declared = /^tools:\s*(.+)$/m.exec(markdown)?.[1].split(",").map((tool) => tool.trim()) ?? [];
-    const tools = ["read", "grep", "find", "ls", shell, "gsd", "codemode", "contact_supervisor"];
+    const declared = declaredRoleTools(markdown);
+    if (declared.includes("Agent") || declared.includes("Task")) throw new Error(`${name} requires nested dispatch; review its parity disposition.`);
+    const tools = ["read", "codemode", "contact_supervisor"];
+    if (declared.includes("Grep")) tools.push("grep");
+    if (declared.includes("Glob")) tools.push("find", "ls");
+    if (declared.includes("Bash")) tools.push(shell, "gsd");
     if (declared.includes("Write")) tools.push("write");
     if (declared.includes("Edit")) tools.push("edit");
+    const unsupplied = declared.filter((tool) => !["Read", "Write", "Edit", "Bash", "Grep", "Glob"].includes(tool));
+    const mutating = tools.some((tool) => [shell, "gsd", "write", "edit"].includes(tool));
     const role = body.replace(/(@?)(?:~|\$HOME)\/\.claude\/gsd-core\//g, (_match, include: string) => `${include}${coreResources}${path.sep}`);
     return {
       name,
@@ -85,12 +105,14 @@ export function buildGsdRuntimeAgents(options: {
           role.trim(),
           ...piExecutionGuidance(),
           "This native Pi child owns only its assigned bounded work. Do not coordinate phases or spawn children. Escalate missing capabilities or genuine authorization decisions. Conditional web/MCP/skill requirements are not supplied by this baseline; do not silently skip required upstream steps.",
-          `Use ${shell} for approved bounded foreground commands and inspect exit status. Use codemode for useful batching/filtering, not to bypass tool policy. Preserve required approvals and assigned output ownership.`,
+          ...(declared.includes("Bash") ? [`Use ${shell} for approved bounded foreground commands and inspect exit status.`] : ["This profile has no shell or gsd grant. Do not route around its file-tool boundary."]),
+          ...(unsupplied.length ? [`Upstream-declared capabilities not supplied by this baseline: ${unsupplied.join(", ")}. Before accepting work, check whether its required steps need these capabilities. Escalate through contact_supervisor for approved setup or a parent-side user decision; never fabricate evidence or silently skip a required step.`] : []),
+          "Use codemode for useful batching/filtering, not to bypass tool policy. Preserve required approvals and assigned output ownership.",
         ].join("\n"),
         tools,
         extensions: [],
-        subagentOnlyExtensions: providers,
-        acceptanceRole: "writer",
+        subagentOnlyExtensions: declared.includes("Bash") ? providers : [],
+        acceptanceRole: mutating ? "writer" : "read-only",
         runner: { type: "pi" },
         systemPromptMode: "replace",
         inheritProjectContext: true,
@@ -162,6 +184,8 @@ export function formatGsdRuntimeAgentStatus(status: GsdRuntimeAgentStatus): stri
     `- registration: ${status.state}`,
     ...(status.roles.length ? [`- native role profiles: ${status.roles.join(", ")}`] : []),
     ...(status.reason ? [`- reason: ${status.reason}`] : []),
+    `- excluded roles: ${Object.entries(GSD_EXCLUDED_ROLES).map(([name, reason]) => `${name}: ${reason}`).join("; ")}`,
+    "- baseline profiles do not supply conditional web/MCP/skills; read-only and file-only roles do not receive gsd or shell grants",
     "- registration supplies tools/provider paths, not a successful child health check; child tool readiness remains unverified until startup/canary evidence is available",
   ].join("\n");
 }

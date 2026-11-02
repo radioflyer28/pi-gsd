@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readdirSync } from "node:fs";
 import * as path from "node:path";
 import test from "node:test";
 
@@ -34,6 +35,26 @@ test("bundled GSD Core commands are exposed through dynamic discovery", () => {
   assert.ok(commands.length >= 50, `expected broad GSD Core command coverage, found ${commands.length}`);
   for (const slashName of ["gsd-next", "gsd-onboard", "gsd-mempalace-capture", "gsd-mempalace-recall"]) {
     assert.ok(slashNames.has(slashName), `expected ${slashName} from package-local gsd-core`);
+  }
+});
+
+test("every bundled command is discovered and preserves the Pi execution contract", () => {
+  const commandsDir = path.resolve("node_modules/@opengsd/gsd-core/commands/gsd");
+  const inspection = inspectGsdCoreCommands();
+  assert.deepEqual(inspection.warnings, []);
+  assert.deepEqual(
+    inspection.commands.map((command) => path.basename(command.path)).sort(),
+    readdirSync(commandsDir).filter((file) => file.endsWith(".md")).sort(),
+  );
+  for (const command of inspection.commands) {
+    const prompt = expandGsdCoreCommandPrompt(command, "");
+    const block = parseSkillBlock(prompt);
+    assert.ok(block, command.slashName);
+    assert.equal(block.name, command.slashName);
+    assert.equal(block.location, command.path);
+    assert.match(block.content, /## Pi execution contract/, command.slashName);
+    assert.match(block.content, /resolve-model/, command.slashName);
+    assert.doesNotMatch(block.content, /@?(?:~|\$HOME)\/\.claude\/gsd-core\//, command.slashName);
   }
 });
 

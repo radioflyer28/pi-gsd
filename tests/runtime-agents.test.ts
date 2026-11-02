@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import test from "node:test";
 
-import { buildGsdRuntimeAgents, GSD_RUNTIME_ROLES, registerGsdRuntimeAgents, RUNTIME_AGENT_EVENT } from "../src/extension/runtime-agents.ts";
+import { buildGsdRuntimeAgents, declaredRoleTools, GSD_RUNTIME_ROLES, registerGsdRuntimeAgents, RUNTIME_AGENT_EVENT } from "../src/extension/runtime-agents.ts";
 import { registerPiGsdCore } from "../src/extension/register.ts";
+import { parseFrontmatter } from "../src/extension/gsd-core-commands.ts";
 import { capabilities, mockPi } from "./test-utils.ts";
 
 function host(rejectAt = -1) {
@@ -32,17 +33,28 @@ test("real runtime definitions load current package-local role bodies and explic
   const roles = buildGsdRuntimeAgents({ platform: "linux" });
   assert.deepEqual(roles.map(({ name }) => name), [...GSD_RUNTIME_ROLES]);
   for (const { name, definition } of roles) {
-    for (const required of ["gsd", "codemode", "bash", "read", "contact_supervisor"]) assert.ok(definition.tools.includes(required), `${name}: ${required}`);
+    const markdown = readFileSync(path.resolve("node_modules/@opengsd/gsd-core/agents", `${name}.md`), "utf8");
+    const declared = declaredRoleTools(markdown);
+    for (const required of ["codemode", "read", "contact_supervisor"]) assert.ok(definition.tools.includes(required), `${name}: ${required}`);
+    assert.equal(definition.tools.includes("bash"), declared.includes("Bash"), name);
+    assert.equal(definition.tools.includes("gsd"), declared.includes("Bash"), name);
+    assert.equal(definition.tools.includes("write"), declared.includes("Write"), name);
+    assert.equal(definition.tools.includes("edit"), declared.includes("Edit"), name);
     assert.deepEqual(definition.extensions, [], "ambient extensions are disabled for both native modes");
-    assert.match(definition.subagentOnlyExtensions[0], /src[\\/]extension[\\/]index\.ts$/);
+    if (declared.includes("Bash")) assert.match(definition.subagentOnlyExtensions[0], /src[\\/]extension[\\/]index\.ts$/);
+    else assert.deepEqual(definition.subagentOnlyExtensions, []);
     assert.match(definition.systemPrompt, new RegExp(`Current upstream role: .*${name}\\.md`));
     assert.match(definition.systemPrompt, /<role>/);
+    const core = path.resolve("node_modules/@opengsd/gsd-core");
+    const { body } = parseFrontmatter(readFileSync(path.join(core, "agents", `${name}.md`), "utf8"));
+    const expected = body.replace(/(@?)(?:~|\$HOME)\/\.claude\/gsd-core\//g, (_match, include: string) => `${include}${path.join(core, "gsd-core")}${path.sep}`);
+    assert.ok(definition.systemPrompt.includes(expected.trim()), `${name}: current upstream body, not a stale copy`);
     assert.match(definition.systemPrompt, /Pi execution contract/);
     assert.doesNotMatch(definition.systemPrompt, /~\/\.claude\/gsd-core\//);
     assert.equal(definition.allowNestedSubagents, false);
     assert.equal(definition.inheritSkills, false);
     assert.equal(definition.inheritGlobalContext, false);
-    assert.equal(definition.acceptanceRole, "writer");
+    assert.equal(definition.acceptanceRole, name === "gsd-user-profiler" ? "read-only" : "writer");
     assert.equal(definition.runner.type, "pi");
     assert.ok(!definition.tools.includes("subagent"));
     assert.ok(!("model" in definition));
@@ -55,10 +67,15 @@ test("Windows definitions bind the registered shell's real provider instead of g
   assert.throws(() => buildGsdRuntimeAgents({ platform: "win32" }), /pwsh tool/);
   const provider = path.resolve("src/extension/index.ts");
   for (const { definition } of buildGsdRuntimeAgents({ platform: "win32", tools: [{ name: "pwsh", sourceInfo: { path: provider } }] })) {
-    assert.ok(definition.tools.includes("pwsh"));
     assert.ok(!definition.tools.includes("bash"));
-    assert.equal(definition.subagentOnlyExtensions.length, 2);
-    assert.equal(path.resolve(definition.subagentOnlyExtensions[1]), provider);
+    if (definition.tools.includes("gsd")) {
+      assert.ok(definition.tools.includes("pwsh"));
+      assert.equal(definition.subagentOnlyExtensions.length, 2);
+      assert.equal(path.resolve(definition.subagentOnlyExtensions[1]), provider);
+    } else {
+      assert.ok(!definition.tools.includes("pwsh"));
+      assert.deepEqual(definition.subagentOnlyExtensions, []);
+    }
   }
   assert.throws(() => buildGsdRuntimeAgents({ platform: "win32", tools: [{ name: "pwsh", exposure: "hidden", sourceInfo: { path: provider } }] }), /pwsh tool/);
 });
@@ -123,4 +140,17 @@ test("public extension startup wires runtime registration and exposes failure se
   assert.match(text, /## GSD runtime agents/);
   assert.match(text, /registration: unavailable/);
   assert.match(text, /child tool readiness: unverified/);
+});
+
+test("role tool parsing handles block lists without treating body text as grants", () => {
+  assert.deepEqual(declaredRoleTools("---\nname: fixture\ntools:\n  - Read\n  - Write\n  - Edit\ncolor: red\n---\ntools: Bash"), ["Read", "Write", "Edit"]);
+  assert.deepEqual(declaredRoleTools("---\ntools: Read, Bash\n---\n"), ["Read", "Bash"]);
+  assert.throws(() => declaredRoleTools("---\nname: missing\n---\ntools: Bash"), /no tools declaration/);
+  assert.throws(() => declaredRoleTools("---\ntools: [Read, Bash]\n---"), /Unsupported/);
+  const roles = buildGsdRuntimeAgents({ platform: "linux" });
+  assert.ok(roles.find(({ name }) => name === "gsd-nyquist-auditor")!.definition.tools.includes("edit"));
+  assert.ok(!roles.find(({ name }) => name === "gsd-security-auditor")!.definition.tools.includes("write"));
+  const profiler = roles.find(({ name }) => name === "gsd-user-profiler")!.definition;
+  assert.deepEqual(profiler.tools, ["read", "codemode", "contact_supervisor"]);
+  assert.deepEqual(profiler.subagentOnlyExtensions, []);
 });

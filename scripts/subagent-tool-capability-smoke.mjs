@@ -11,6 +11,7 @@ import { spawnSync } from "node:child_process";
 import * as sdk from "@earendil-works/pi-coding-agent";
 import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
 import { registerPiGsdCore } from "../src/extension/register.ts";
+import { GSD_RUNTIME_ROLES } from "../src/extension/runtime-agents.ts";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const processMode = process.argv[2] === "--process-child";
@@ -19,7 +20,7 @@ const pwsh = processMode ? process.argv[5] : process.argv[3];
 if (!source) throw new Error("Usage: npm run test:child-tools -- <pi-subagents-checkout> [trusted-pwsh-entrypoint]");
 if (process.platform === "win32" && !pwsh) throw new Error("On Windows, supply the trusted pwsh provider entrypoint explicitly.");
 const tools = process.platform === "win32" ? [{ name: "pwsh", sourceInfo: { path: path.resolve(pwsh) } }] : [];
-const roles = ["gsd-planner", "gsd-executor", "gsd-verifier"];
+const roles = ["gsd-planner", "gsd-executor", "gsd-verifier", "gsd-debugger", "gsd-roadmapper", "gsd-nyquist-auditor"];
 
 async function verifyNativeChild(snapshot, definition, mode, root) {
   const role = definition.name;
@@ -152,7 +153,7 @@ if (processMode) {
     const status = await parentTools.find((tool) => tool.name === "gsd").execute("parent-status", { action: "status" }, undefined, undefined, { cwd: root });
     assert.match(status.content[0].text, /registration: registered/);
     const registeredAgents = listRuntimeAgentConfigs(host);
-    assert.equal(registeredAgents.length, 5);
+    assert.equal(registeredAgents.length, GSD_RUNTIME_ROLES.length);
     for (const role of roles) {
       const agent = registeredAgents.find((agent) => agent.name === role);
       assert.ok(agent);

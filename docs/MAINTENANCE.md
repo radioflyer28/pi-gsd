@@ -40,6 +40,18 @@ Before editing code, decide which surface changed.
 | pi-subagents | New/renamed `subagent` tool, changed acceptance/model fields, package path changes | Update detection and guidance/model-routing output only. |
 | Local dependency drift | Repo `node_modules` differs from installed Pi runtime but tests pass | Refresh lockfile/dev install if useful; avoid unnecessary code changes. |
 
+## Release numbering
+
+Use `<core major.minor.patch>-pi.<positive revision>`; the first aligned release is
+`1.19.0-pi.1`. Increment only the adapter revision for fixes against the same Core
+version. Reset it to 1 when upgrading Core. The suffix has SemVer prerelease
+ordering; install explicit Git tags rather than relying on stable-version ranges.
+Keep the Core dependency exact in package.json and the lockfile. Update the package,
+lockfile/root, extension manifest, metadata tests and dated changelog together.
+`release:check` verifies that the version prefix equals declared, locked and
+installed Core, and checks a supplied Git tag. A Core upgrade needs a new integration
+review, not just a version edit. Pi peers and optional integrations are independent.
+
 ## Baseline inventory
 
 Capture the runtime and installed package state before changing anything.
@@ -119,6 +131,13 @@ If package loading changes, update metadata and installation docs together.
 
 ## GSD Core compatibility
 
+Consult the [Pi parity matrix](PI-PARITY.md) on every upstream bump. Native role
+coverage is explicitly reviewed, not automatically granted from new upstream
+files. Tests cover canonical command resources and the full role/hook inventories.
+Keep wrapping GSD Core itself; do not couple command execution to upstream's Pi
+skills, dispatcher or extension internals. Dedicated workflow adaptations are
+deferred. Hook inventory presence is not enabled hook coverage.
+
 `pi-gsd` should consume GSD Core dynamically wherever possible.
 
 Check the currently installed GSD Core package:
@@ -175,6 +194,14 @@ For this adapter, the verified v1.15.0 seams remain the package-local `gsd-tools
 The development baseline is Pi 1.3.0 and GSD Core 1.17.0; the Pi peer minimum remains >=1.0.0. Pi's changed `before_agent_start` event does not require adaptation because pi-gsd does not subscribe to it. GSD's state-write verification remains upstream-owned. Keep testing the package-local command/catalog seams rather than importing its state engine.
 
 GSD 1.16+ gives blocking guards a 120-second host budget and each Git probe 5 seconds (up to three sequential worktree probes). The opt-in bridge must not kill the guard after 4 seconds. `upstream-safety-guard.ts` uses the 120-second budget, keeps abort/output bounds, and emits bounded, control-character-sanitized stderr/timeout diagnostics without changing decisions. The delayed-denial regression must still block after 4.5 seconds; timeout/cancellation tests must remain fail-open.
+
+### GSD Core 1.19.0 refresh
+
+The GSD Core dependency is pinned exactly to 1.19.0. The locked Pi development baseline remains 1.3.0 and the Pi peer minimum remains >=1.0.0; Node.js >=24 is unchanged. Both 1.18.0 and 1.19.0 retain the package-local `gsd-tools` binary, flat `commands/gsd/*.md` directory, canonical `agents/gsd-*.md` sources and routing catalog path. Workflow, state, validation and guard fixes remain upstream-owned; no workflow implementation is copied here.
+
+GSD Core 1.19.0 declares its own Pi package entrypoint (`pi/gsd.cjs`), with skills, a native `gsd_dispatch` child-process launcher and a broader lifecycle-hook bridge. A dependency manifest is not an instruction to load that extension. Do not install/load the upstream Pi package alongside pi-gsd as part of this refresh: pi-gsd remains the command/model-routing owner and uses the optional pi-subagents runtime profiles. The upstream dispatcher and additional lifecycle guards are not activated by this dependency bump; `safety.upstreamGuards` retains its existing opt-in scope.
+
+The maintenance tests compare discovery against the complete bundled command directory, check the Pi execution contract on every expanded command, bind routing-catalog provenance to the installed package version and require each native runtime profile to contain its current package-local upstream role body. Keep command counts observational rather than fixed compatibility requirements.
 
 ## context-mode compatibility
 

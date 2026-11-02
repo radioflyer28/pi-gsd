@@ -2,7 +2,7 @@
 
 `pi-gsd` is a thin [Pi](https://github.com/earendil-works/pi-coding-agent) package that exposes upstream `@opengsd/gsd-core` workflows inside Pi.
 
-It does **not** reimplement GSD. It registers a small Pi tool, slash commands, and guardrails that help Pi use GSD safely while keeping workflow behavior in upstream GSD Core. Pi 1.0.0 or newer is required; the development lockfile uses Pi 1.3.0. The bundled GSD Core dependency baseline is 1.17.0, which requires Node.js 24 or newer. pi-subagents remains an optional, separately installed Pi package.
+It does **not** reimplement GSD. It registers a small Pi tool, slash commands, and guardrails that help Pi use GSD safely while keeping workflow behavior in upstream GSD Core. Pi 1.0.0 or newer is required; the development lockfile uses Pi 1.3.0. The bundled GSD Core dependency baseline is 1.19.0, which requires Node.js 24 or newer. pi-subagents remains an optional, separately installed Pi package.
 
 ## Why?
 - I want to use GSD inside Pi.
@@ -34,6 +34,18 @@ It does **not** reimplement GSD. It registers a small Pi tool, slash commands, a
   - `pi-subagents` — fresh-context or parallel planning, execution, and review.
 - **Context-mode guardrails** that prevent the most common detrimental uses while leaving legitimate computed processing available.
 
+## Integration parity
+
+The [Pi parity matrix](docs/PI-PARITY.md) distinguishes discoverable resources,
+reviewed native profiles, conditional capabilities and unverified workflows.
+pi-gsd continues to wrap canonical GSD Core commands, roles and CLI operations;
+it does not consume upstream's Pi skills or extension internals. It registers 33
+reviewed leaf roles through optional pi-subagents; the nested debug manager and
+browser-dependent DOM verifier remain excluded. Dedicated debug/checkpoint
+adaptations are deferred to avoid another maintenance surface. Broader hook
+coverage has been evaluated, not automatically enabled; the existing two upstream
+guards remain opt-in.
+
 ## Design principles
 
 1. **Stay thin.** Pi-specific registration belongs here; GSD workflow semantics stay in `@opengsd/gsd-core`.
@@ -41,6 +53,22 @@ It does **not** reimplement GSD. It registers a small Pi tool, slash commands, a
 3. **Keep durable GSD state in `.planning/`.** Context-mode indexes are search/cache support, not canonical project memory.
 4. **Detect optional accelerators, do not vendor them.** `context-mode` and `pi-subagents` must be installed as Pi packages so their own tools, hooks, skills, and prompts are active.
 5. **Prefer real runtime signals.** When Pi exposes active tool inventory, `pi-gsd` trusts tools like `ctx_execute` and `subagent` over filesystem probes.
+
+## Release versions
+
+Releases use `<GSD Core version>-pi.<adapter revision>`. For example,
+**`1.19.0-pi.1` bundles exactly GSD Core `1.19.0`**; adapter-only fixes become
+`1.19.0-pi.2`, while an upstream upgrade starts a new sequence such as
+`1.20.0-pi.1`. Core is an exact dependency pin, not a caret range. Release checks
+reject differences between that baseline and the declared, locked or installed
+Core version.
+
+The `-pi.N` suffix is a SemVer prerelease identifier, not a claim that GSD Core
+itself is a prerelease. Use the explicit Git tag when installing:
+
+```text
+pi install git:github.com/radioflyer28/pi-gsd@v1.19.0-pi.1 --no-approve
+```
 
 ## Installation
 

@@ -10,23 +10,27 @@ are installed or overwritten.
 ## Automatic core role startup
 
 At parent `session_start`, pi-gsd uses the supported
-`pi-subagents:runtime-agent-register:v1` event to register `gsd-planner`,
-`gsd-executor`, `gsd-verifier`, `gsd-plan-checker` and `gsd-code-reviewer` with the
-installed optional pi-subagents owner. Select these exact agent names directly.
-Their prompts are read from the current package-local GSD Core agent files, not
-vendored or rewritten workflows. Resolve each role's model immediately before
-launch; runtime definitions do not pin models or authorize delegation.
+`pi-subagents:runtime-agent-register:v1` event to register 33 reviewed leaf roles
+with the installed optional pi-subagents owner. These include planning, execution,
+verification, research, roadmapping, debugging and audit roles. Select the exact
+registered name directly. The nested debug session manager and browser-dependent
+DOM verifier are excluded; see the [parity matrix](PI-PARITY.md).
+Prompts come from current package-local canonical role files, not vendored workflows.
+Resolve each role's model immediately before launch; definitions do not pin models
+or authorize delegation.
 
-Each definition explicitly permits `gsd`, native `codemode`, read/search tools,
-`contact_supervisor` and the platform shell. `write`/`edit` follow the upstream
-role's declared file tools. Both native foreground and background children load
-pi-gsd through `subagentOnlyExtensions`; `extensions: []` disables ambient discovery.
+Each definition permits native `codemode`, `read` and `contact_supervisor`.
+Search/write/edit tools follow upstream declarations, including block-list syntax.
+Only shell-declaring roles receive `gsd`, the platform shell and explicit provider
+paths. File-only roles receive neither shell nor GSD. Shell-capable foreground and
+background children load pi-gsd through `subagentOnlyExtensions`;
+`extensions: []` disables ambient discovery.
 Windows adds the provider entrypoint from the registered parent `pwsh` tool's
 `sourceInfo.path`, not an assumed install directory. Missing source metadata or a
 hidden/missing PowerShell tool prevents registration rather than falling back to
 bash. On Unix/WSL the baseline shell is native `bash`.
 
-These are **write-capable operational agents**, including checker/reviewer roles:
+Shell-capable profiles are **write-capable operational agents**, including checker/reviewer roles:
 `gsd` and the shell are not read-only grants. Use the inspector template below for
 strictly tool-minimized evidence inspection. No runtime definitions modify builtin
 workers, grant nested orchestration, inherit a skills catalog or supply conditional
@@ -39,8 +43,9 @@ trust and capability ceilings remain authoritative at launch. Disable integratio
 with `integrations.subagents: off` and reload to remove these registrations.
 Owned registrations are disposed on parent shutdown/reload; loading pi-gsd in a
 restricted child without a parent subagent interface does not register more roles.
-Do not substitute a generic worker if registration fails: keep the assignment
-inline until configuration is repaired.
+Do not substitute a generic worker if registration fails. If the workflow requires
+a child role, stop that step until configuration is repaired; skip only explicitly
+optional steps. Work that upstream permits inline remains a separate choice.
 
 ## Three independent contracts
 

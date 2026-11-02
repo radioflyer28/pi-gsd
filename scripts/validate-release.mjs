@@ -20,6 +20,18 @@ if (unique.size !== 1 || [...unique].some((version) => typeof version !== "strin
 }
 
 const version = pkg.version;
+const aligned = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-pi\.([1-9]\d*)$/.exec(version);
+if (!aligned) throw new Error("Release version must be <GSD Core major.minor.patch>-pi.<positive adapter revision>");
+const coreVersion = aligned.slice(1, 4).join(".");
+const coreVersions = {
+  declared: pkg.dependencies?.["@opengsd/gsd-core"],
+  lockRoot: lock.packages?.[""]?.dependencies?.["@opengsd/gsd-core"],
+  locked: lock.packages?.["node_modules/@opengsd/gsd-core"]?.version,
+  installed: json("node_modules/@opengsd/gsd-core/package.json").version,
+};
+if (Object.values(coreVersions).some((value) => value !== coreVersion)) {
+  throw new Error(`GSD Core must be pinned exactly to ${coreVersion}: ${JSON.stringify(coreVersions)}`);
+}
 const tagIndex = process.argv.indexOf("--tag");
 if (tagIndex >= 0) {
   const supplied = process.argv[tagIndex + 1];
@@ -41,4 +53,4 @@ if (!pkg.pi?.prompts?.includes("./prompts")) throw new Error("Pi prompt path is 
 const changelog = readFileSync("CHANGELOG.md", "utf8");
 if (!changelog.includes(`## [${version}] - `)) throw new Error(`CHANGELOG.md has no ${version} release heading`);
 
-console.log(`release:check ok (v${version})`);
+console.log(`release:check ok (v${version}; GSD Core ${coreVersion})`);
