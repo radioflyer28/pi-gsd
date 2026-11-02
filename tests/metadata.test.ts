@@ -23,7 +23,7 @@ test("release metadata stays aligned and package contents are allowlisted", () =
   const pkg = JSON.parse(readFileSync(path.resolve("package.json"), "utf8"));
   const lock = JSON.parse(readFileSync(path.resolve("package-lock.json"), "utf8"));
 
-  assert.equal(pkg.version, "1.19.0-pi.1");
+  assert.equal(pkg.version, "1.19.0-pi.2");
   assert.equal(manifest.version, pkg.version);
   assert.equal(lock.version, pkg.version);
   assert.equal(lock.packages[""].version, pkg.version);

@@ -50,6 +50,7 @@ export type RegisterablePiApi = RuntimeAgentHost & {
   getThinkingLevel?: () => "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
   setThinkingLevel?: (level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max") => void;
   setModel?: (model: unknown) => Promise<boolean>;
+  sendMessage?: (message: { customType: string; content: string; display: boolean; details?: Record<string, unknown> }, options?: { triggerTurn?: boolean }) => void;
   sendUserMessage?: (message: string, options?: { deliverAs?: "steer" | "followUp" }) => void;
   on?: (eventName: string, handler: (event: any, ctx: any) => unknown) => void;
   exec?: PiExec;
@@ -614,38 +615,64 @@ export function registerPiGsdCore(pi: RegisterablePiApi, options: RegisterPiGsdO
     });
   }
 
-  pi.registerCommand?.("gsd-status", {
+  // Pi ignores command-handler return values. Publish text results explicitly,
+  // without starting a model turn or replacing canonical workflow dispatch.
+  const registerCommand = (name: string, command: {
+    description: string;
+    handler: (args: unknown, ctx?: GsdExecutionContext) => Promise<{ text: string } | void>;
+  }) => pi.registerCommand?.(name, {
+    ...command,
+    handler: async (args: unknown, ctx?: GsdExecutionContext) => {
+      const result = await command.handler(args, ctx);
+      if (result?.text) {
+        if (pi.sendMessage) {
+          pi.sendMessage({
+            customType: "gsd-command-result",
+            content: result.text,
+            display: true,
+            details: { command: name },
+          }, { triggerTurn: false });
+        } else {
+          const context = ctx ?? (typeof args === "object" ? args as GsdExecutionContext : undefined);
+          context?.ui?.notify?.(result.text, "info");
+        }
+      }
+      return result;
+    },
+  });
+
+  registerCommand("gsd-status", {
     description: "Show pi-gsd status and optional integration detection.",
     handler: commandHandler(dispatcher, "status", options.defaultCwd, pi, sessionModelOverrides, runtimeRoutingState),
   });
 
-  pi.registerCommand?.("gsd-doctor", {
+  registerCommand("gsd-doctor", {
     description: "Show pi-gsd diagnostics and integration guidance.",
     handler: commandHandler(dispatcher, "doctor", options.defaultCwd, pi, sessionModelOverrides, runtimeRoutingState),
   });
 
-  pi.registerCommand?.("gsd-run", {
+  registerCommand("gsd-run", {
     description: "Run gsd-tools through the thin wrapper: /gsd-run <args>",
     handler: commandHandler(dispatcher, "run", options.defaultCwd, pi, sessionModelOverrides, runtimeRoutingState),
   });
 
-  pi.registerCommand?.("gsd-model", {
+  registerCommand("gsd-model", {
     description: "Resolve and explicitly switch to the Pi model/thinking level configured for a GSD agent, skill, or command.",
     handler: gsdModelCommandHandler(options.defaultCwd, pi, sessionModelOverrides),
   });
 
-  pi.registerCommand?.("gsd-model-config", {
+  registerCommand("gsd-model-config", {
     description: "Interactively configure provider-neutral heavy, standard, or light GSD model routing.",
     handler: gsdModelConfigCommandHandler(options.defaultCwd, pi),
   });
 
-  pi.registerCommand?.("gsd-init-config", {
+  registerCommand("gsd-init-config", {
     description: "Create .pi-gsd/config.json and .pi-gsd/model-routing.json with pi-gsd defaults.",
     handler: commandHandler(dispatcher, "init-config", options.defaultCwd, pi, sessionModelOverrides),
   });
 
   for (const command of gsdCoreCommands) {
-    pi.registerCommand?.(command.slashName, {
+    registerCommand(command.slashName, {
       description: command.argumentHint
         ? `${command.argumentHint} — ${command.description}`
         : command.description,

@@ -72,6 +72,7 @@ export function mockPi(
   const tools: Record<string, any>[] = [];
   const commands = new Map<string, Record<string, any>>();
   const handlers = new Map<string, Array<(event: any, ctx: any) => unknown>>();
+  const sentMessages: Array<{ message: { customType: string; content: string; display: boolean; details?: Record<string, unknown> }; options?: { triggerTurn?: boolean } }> = [];
   const sentUserMessages: string[] = [];
   return {
     api: {
@@ -100,6 +101,9 @@ export function mockPi(
         selectedModel = model;
         return true;
       },
+      sendMessage(message: { customType: string; content: string; display: boolean; details?: Record<string, unknown> }, options?: { triggerTurn?: boolean }) {
+        sentMessages.push({ message, options });
+      },
       sendUserMessage(message: string) {
         sentUserMessages.push(message);
       },
@@ -111,6 +115,7 @@ export function mockPi(
     tools,
     commands,
     handlers,
+    sentMessages,
     sentUserMessages,
     get thinkingLevel() {
       return thinkingLevel;

@@ -4,6 +4,14 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [1.19.0-pi.2] - 2026-11-02
+
+### Fixed
+
+- Publish slash-command text as visible session messages without starting a model turn. Pi ignores handler return values, which previously left doctor, status and other local command results invisible. Canonical workflow prompt dispatch remains unchanged.
+- Require the live Pi smoke test to find the visible doctor diagnostic report, not merely a successful command acknowledgement. Add shared command-output regression coverage.
+- Keep GSD Core pinned to exactly 1.19.0.
+
 ## [1.19.0-pi.1] - 2026-11-02
 
 ### Changed

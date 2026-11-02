@@ -42,6 +42,7 @@ test("registerPiGsdCore exposes upstream GSD Core commands as slash commands", a
   await pi.commands.get("gsd-plan-phase")!.handler("1 --research", { isIdle: () => true });
 
   assert.equal(pi.sentUserMessages.length, 1);
+  assert.deepEqual(pi.sentMessages, []);
   assert.match(pi.sentUserMessages[0], /Execute upstream GSD Core command `gsd:plan-phase`/);
   assert.match(pi.sentUserMessages[0], /Phase number: 1 --research/);
   assert.match(pi.sentUserMessages[0], /First arg: 1/);
@@ -136,7 +137,7 @@ test("registered status and doctor commands ignore string args", async () => {
   assert.match(doctorResponse.text, /## Integration guidance/);
 });
 
-test("registered commands return text instead of sending large notifications through UI", async () => {
+test("registered commands display session messages instead of large UI notifications", async () => {
   const pi = mockPi();
   const notifications: Array<{ message: string; level?: string }> = [];
   registerPiGsdCore(pi.api, { parameters: {}, detect: () => capabilities("inline"), defaultCwd: process.cwd(), gsdCoreCommands: [] });
@@ -153,6 +154,9 @@ test("registered commands return text instead of sending large notifications thr
 
   assert.match(response.text, /# pi-gsd status/);
   assert.deepEqual(notifications, []);
+  assert.equal(pi.sentMessages[0]?.message.content, response.text);
+  assert.equal(pi.sentMessages[0]?.message.display, true);
+  assert.equal(pi.sentMessages[0]?.options?.triggerTurn, false);
 });
 
 test("parseCommandArgs preserves quoted and escaped gsd-run arguments", () => {
@@ -465,4 +469,34 @@ test("gsd-model command can prompt for a fallback model when configured model is
 
   assert.match(toolText(resolvedAgain), /source: session\.gsd-planner/);
   assert.match(toolText(resolvedAgain), /resolved model: openai\/good/);
+});
+
+test("all local command text is published once without requesting a model turn", async () => {
+  const pi = mockPi();
+  const response = async () => ({ text: "local report", details: { caps: capabilities("inline") } });
+  registerPiGsdCore(pi.api, {
+    parameters: {}, gsdCoreCommands: [],
+    dispatcher: { status: response, doctor: response, run: response, initConfig: response, resolveModel: response },
+  });
+  for (const name of ["gsd-status", "gsd-doctor", "gsd-run", "gsd-init-config", "gsd-model", "gsd-model-config"]) {
+    const before = pi.sentMessages.length;
+    const result = await pi.commands.get(name)!.handler("", { cwd: process.cwd() });
+    assert.equal(pi.sentMessages.length, before + 1, name);
+    assert.deepEqual(pi.sentMessages.at(-1), {
+      message: { customType: "gsd-command-result", content: result.text, display: true, details: { command: name } },
+      options: { triggerTurn: false },
+    });
+  }
+  assert.deepEqual(pi.sentUserMessages, []);
+});
+
+test("local commands fall back to UI notification when sendMessage is unavailable", async () => {
+  const pi = mockPi();
+  const { sendMessage: _sendMessage, ...api } = pi.api;
+  const notifications: string[] = [];
+  registerPiGsdCore(api, { parameters: {}, detect: () => capabilities("inline"), gsdCoreCommands: [] });
+  const result = await pi.commands.get("gsd-status")!.handler("", {
+    cwd: process.cwd(), ui: { notify: (text: string) => notifications.push(text) },
+  });
+  assert.deepEqual(notifications, [result.text]);
 });

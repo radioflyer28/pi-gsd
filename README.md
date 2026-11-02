@@ -57,8 +57,8 @@ guards remain opt-in.
 ## Release versions
 
 Releases use `<GSD Core version>-pi.<adapter revision>`. For example,
-**`1.19.0-pi.1` bundles exactly GSD Core `1.19.0`**; adapter-only fixes become
-`1.19.0-pi.2`, while an upstream upgrade starts a new sequence such as
+**`1.19.0-pi.2` bundles exactly GSD Core `1.19.0`**; adapter-only fixes become
+`1.19.0-pi.3`, while an upstream upgrade starts a new sequence such as
 `1.20.0-pi.1`. Core is an exact dependency pin, not a caret range. Release checks
 reject differences between that baseline and the declared, locked or installed
 Core version.
@@ -67,7 +67,7 @@ The `-pi.N` suffix is a SemVer prerelease identifier, not a claim that GSD Core
 itself is a prerelease. Use the explicit Git tag when installing:
 
 ```text
-pi install git:github.com/radioflyer28/pi-gsd@v1.19.0-pi.1 --no-approve
+pi install git:github.com/radioflyer28/pi-gsd@v1.19.0-pi.2 --no-approve
 ```
 
 ## Installation

@@ -55,7 +55,7 @@ const timeout = setTimeout(() => {
   if (settled) return;
   settled = true;
   child.kill("SIGTERM");
-  fail("timed out waiting for Pi RPC get_commands response", stderr);
+  fail("timed out waiting for Pi RPC command inventory or visible doctor report", stderr);
 }, 20_000);
 
 child.on("error", (error) => {
@@ -133,15 +133,28 @@ child.stdout.on("data", (chunk) => {
       continue;
     }
 
-    if (message.id !== "pi-gsd-live-doctor" || message.command !== "prompt") continue;
+    if (message.id === "pi-gsd-live-doctor" && message.command === "prompt") {
+      if (!message.success) {
+        child.kill("SIGTERM");
+        fail("Pi RPC /gsd-doctor handler failed", JSON.stringify(message, null, 2));
+      }
+      send({ id: "pi-gsd-live-output", type: "get_messages" });
+      continue;
+    }
+    if (message.id !== "pi-gsd-live-output" || message.command !== "get_messages") continue;
     settled = true;
     clearTimeout(timeout);
-    if (!message.success) {
+    const report = message.data?.messages?.find((entry) =>
+      entry.role === "custom" && entry.customType === "gsd-command-result"
+      && entry.display === true && entry.details?.command === "gsd-doctor");
+    const reportText = typeof report?.content === "string"
+      ? report.content : (report?.content ?? []).map((part) => part.text ?? "").join("\n");
+    if (!message.success || !reportText.includes("## Compatibility probe") || !reportText.includes("## Integration guidance")) {
       child.kill("SIGTERM");
-      fail("Pi RPC /gsd-doctor handler failed", JSON.stringify(message, null, 2));
+      fail("doctor completed without a visible diagnostic report");
     }
 
-    console.log(`live-pi-rpc-smoke: ok (${commandSummary.total} total commands, ${commandSummary.gsd} gsd-* extension commands; /gsd-doctor handled)`);
+    console.log(`live-pi-rpc-smoke: ok (${commandSummary.total} total commands, ${commandSummary.gsd} gsd-* extension commands; /gsd-doctor report visible)`);
     child.kill("SIGTERM");
   }
 });
