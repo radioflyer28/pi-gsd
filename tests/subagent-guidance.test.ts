@@ -11,6 +11,10 @@ import { registerPiGsdCore } from "../src/extension/register.ts";
 import { capabilities, mockPi } from "./test-utils.ts";
 
 function assertCapabilityGuidance(text: string) {
+  assert.match(text, /GSD_RUNTIME=pi without changing project\/global settings or the parent environment/);
+  assert.match(text, /physical agent files, not pi-subagents runtime registration/);
+  assert.match(text, /Stop the required child step/);
+  assert.match(text, /Registration is not startup or assignment readiness/);
   assert.match(text, /current Pi session only, not selected child readiness/);
   assert.match(text, /Before selecting any GSD child/);
   assert.match(text, /action: "list", options: \{ capabilities: true \}/);
@@ -138,7 +142,7 @@ test("operational templates support different upstream roles with explicit platf
       "edit", "write", "gsd", "codemode", "contact_supervisor",
     ]);
     assert.match(profile, /^inheritSkills: false$/m);
-    assert.match(profile, /^subagentOnlyExtensions:\r?\n.*pi-gsd\/src\/extension\/index\.ts/m);
+    assert.match(profile, /^subagentOnlyExtensions:\r?\n.*pi-gsd\/src\/extension\/leaf\.ts/m);
     if (index === 1) assert.match(profile, /pi-pwsh-notify-secure\/src\/index\.ts/);
     assert.match(profile, /supplied current\r?\npackage-local upstream role and workflow/);
     assert.match(profile, /Use codemode for useful batching, filtering or deterministic tool chains/);

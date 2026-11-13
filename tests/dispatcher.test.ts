@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
@@ -399,10 +400,13 @@ test("dispatcher run keeps spawned command output memory-bounded before final tr
 
   const result = await dispatcher.run(["-e", "process.stdout.write('a'.repeat(70000)); process.stderr.write('b'.repeat(70000));"], process.cwd());
 
-  assert.match(result.text, /stream output truncated before process close/);
   assert.ok(result.text.length < 50_500);
-  assert.match(result.text, /a+\n\[stderr\]/);
-  assert.match(result.text, /b+$/);
+  const execution = result.details.execution!;
+  assert.equal(execution.truncated, true);
+  assert.equal(execution.fullOutput?.complete, true);
+  assert.equal(readFileSync(execution.fullOutput!.stdout!, "utf8").length, 70000);
+  assert.equal(readFileSync(execution.fullOutput!.stderr!, "utf8").length, 70000);
+  rmSync(path.dirname(execution.fullOutput!.stdout!), { recursive: true, force: true });
 });
 
 test("dispatcher run falls back to Node spawn when pi.exec is unavailable", async () => {
@@ -449,7 +453,8 @@ test("dispatcher run resolves cancellation after spawn starts", async () => {
   setTimeout(() => controller.abort(), 50);
   const result = await running;
 
-  assert.match(result.text, /gsd-tools exited with 130/);
+  assert.equal(result.details.execution?.outcome, "cancelled");
+  assert.equal(result.ok, false);
   assert.match(result.text, /Cancelled while running|AbortError|The operation was aborted/i);
 });
 
@@ -469,4 +474,47 @@ test("dispatcher run returns before dispatch when aborted", async () => {
 
   assert.equal(called, false);
   assert.equal(result.text, "Cancelled before starting.");
+});
+
+
+test("package-local CLI identifies as Pi in normal host exec and Windows shim paths without changing parent env", async () => {
+  const root = mkdtempSync(path.join(tmpdir(), "pi-gsd-runtime-env-"));
+  const binDir = path.join(root, "node_modules", ".bin");
+  const coreDir = path.join(root, "node_modules", "@opengsd", "gsd-core");
+  const previous = process.env.GSD_RUNTIME;
+  process.env.GSD_RUNTIME = "codex";
+  try {
+    mkdirSync(binDir, { recursive: true });
+    mkdirSync(coreDir, { recursive: true });
+    writeFileSync(path.join(coreDir, "package.json"), JSON.stringify({ bin: { "gsd-tools": "cli.cjs" } }));
+    writeFileSync(path.join(coreDir, "cli.cjs"), "console.log(JSON.stringify({runtime:process.env.GSD_RUNTIME,args:process.argv.slice(2),cwd:process.cwd(),inherited:!!process.env.PATH}));");
+    const args = ["arg with spaces", "&", "|", "^caret", 'quote"value', "--raw"];
+    const signal = new AbortController().signal;
+    for (const shimName of ["gsd-tools", "gsd-tools.cmd"]) {
+      const shim = path.join(binDir, shimName);
+      writeFileSync(shim, "placeholder");
+      let hostCalls = 0;
+      const dispatcher = createGsdDispatcher({ gsdToolsCommand: shim, detect: () => capabilities("inline"),
+        exec: async (command, actualArgs, options) => {
+          hostCalls++;
+          assert.equal(command, process.execPath);
+          assert.equal(options?.cwd, root);
+          assert.equal(options?.signal, signal);
+          assert.equal(process.env.GSD_RUNTIME, "codex");
+          const result = spawnSync(command, actualArgs ?? [], { cwd: options?.cwd, encoding: "utf8" });
+          assert.ifError(result.error);
+          return { stdout: result.stdout, stderr: result.stderr, exitCode: result.status ?? 1 };
+        },
+      });
+      const result = await dispatcher.run(args, root, signal);
+      assert.match(result.text, /gsd-tools exited with 0/);
+      const data = JSON.parse(result.text.slice(result.text.indexOf("{")));
+      assert.deepEqual(data, { runtime: "pi", args, cwd: root, inherited: true });
+      assert.equal(hostCalls, shimName.endsWith(".cmd") ? 0 : 1);
+      assert.equal(process.env.GSD_RUNTIME, "codex");
+    }
+  } finally {
+    if (previous === undefined) delete process.env.GSD_RUNTIME; else process.env.GSD_RUNTIME = previous;
+    rmSync(root, { recursive: true, force: true });
+  }
 });

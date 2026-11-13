@@ -223,7 +223,9 @@ export function evaluateContextModeToolCall(
 
     const candidate = normalizeCandidate(rawPath, cwd);
     const canonical = realpath(candidate) ?? candidate;
-    if (isBulkyOrTransientPath(candidate)) return { action: "allow" };
+    // An ancestor such as /tmp or a workspace named build does not make every
+    // source file transient. Classify directories within the requested project.
+    if (isBulkyOrTransientPath(path.relative(cwd, candidate))) return { action: "allow" };
     if (userExplicitlyRequestedComputedFileProcessing(ctx)) return { action: "allow" };
     if (!isSmallFileWhereReadEditIsUsuallyBetter(candidate) && !isPlanningPath(canonical)) return { action: "allow" };
 

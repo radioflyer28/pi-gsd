@@ -46,6 +46,8 @@ adaptations are deferred to avoid another maintenance surface. Broader hook
 coverage has been evaluated, not automatically enabled; the existing two upstream
 guards remain opt-in.
 
+See the [package design review and implementation contract](docs/PACKAGE-DESIGN-REVIEW.md) for the structured tool contract and remaining verification gates.
+
 ## Design principles
 
 1. **Stay thin.** Pi-specific registration belongs here; GSD workflow semantics stay in `@opengsd/gsd-core`.
@@ -57,8 +59,8 @@ guards remain opt-in.
 ## Release versions
 
 Releases use `<GSD Core version>-pi.<adapter revision>`. For example,
-**`1.19.0-pi.2` bundles exactly GSD Core `1.19.0`**; adapter-only fixes become
-`1.19.0-pi.3`, while an upstream upgrade starts a new sequence such as
+**`1.19.0-pi.3` bundles exactly GSD Core `1.19.0`**; adapter-only fixes become
+`1.19.0-pi.4`, while an upstream upgrade starts a new sequence such as
 `1.20.0-pi.1`. Core is an exact dependency pin, not a caret range. Release checks
 reject differences between that baseline and the declared, locked or installed
 Core version.
@@ -67,7 +69,7 @@ The `-pi.N` suffix is a SemVer prerelease identifier, not a claim that GSD Core
 itself is a prerelease. Use the explicit Git tag when installing:
 
 ```text
-pi install git:github.com/radioflyer28/pi-gsd@v1.19.0-pi.2 --no-approve
+pi install git:github.com/radioflyer28/pi-gsd@v1.19.0-pi.3 --no-approve
 ```
 
 ## Installation
@@ -93,6 +95,20 @@ pi install npm:pi-subagents
 ```
 
 They are intentionally not dependencies of `pi-gsd`. A nested npm install would place files on disk but would not guarantee that Pi loaded their public tools and hooks.
+
+For the known pi-subagents runtime-only `list`/`get` mismatch, status/doctor inspect
+reviewed loaded-provider file fingerprints. When affected source is detected, the
+parent agent is instructed to explain the issue and ask before preparing a repair.
+Unknown versions are not presumed broken. See the [approval-gated repair guide](docs/PI-SUBAGENTS-REPAIR.md).
+Nothing is patched, installed or activated automatically.
+
+GSD children use stock Pi editing by default and retain `codemode`. The optional
+`childProviders.multiEdit` binding enhances planning authors and the executor;
+installing it in the parent alone does not opt children in. Windows children can
+use stock Pi `powershell` when available, without a separate shell extension; an
+existing approved `pwsh` integration is preserved. See [child tool selection](docs/SUBAGENT-PROFILES.md).
+Delegated workflows still require the optional pi-subagents owner; stock editing
+and shell support do not imply that Pi itself supplies delegation.
 
 ### Git or npm install
 
@@ -165,6 +181,37 @@ Virtual model registration is **not implemented yet**—enabling `virtualModels`
 
 Use `/gsd-model agent gsd-planner` to explicitly switch the current Pi session model/thinking level when the route resolves to an available configured model. It does not persist configuration or arm child routing. Use `/gsd-model-config heavy`, `standard`, or `light` to select an available provider-qualified model, thinking level, and fallback policy and save it to `.pi-gsd/model-routing.json`. Set `fallback: "prompt"` to require a user choice before delegation when a configured model is unavailable; chosen `/gsd-model` fallbacks are remembered per target for the current extension session.
 
+### Codemode result contract
+
+`gsd` returns a version-1 object to codemode, not the old display string. Check
+`ok` before dependent operations. `execution` carries outcome, nullable exit code,
+stdout/stderr, truncation flags and optional private temporary recovery paths.
+`execution.json` exists only for complete, valid, successful JSON stdout.
+`modelRouting` and `runtimeAgents` are separate evidence, never permission to launch.
+Expected CLI failures retain data (`ok: false`, tool error flag); invalid/blocked
+calls may reject. `text` remains the human-readable report.
+
+```js
+const result = await tools.gsd({ action: "run", args: ["query", "init.plan-phase", "6"] });
+if (!result.ok) throw new Error(result.execution?.stderr || result.text);
+if (result.execution?.stdoutTruncated) throw new Error("Read the recovery output before proceeding");
+text(result.execution?.json);
+```
+
+Captured streams are bounded at 8 MiB each in the native transport; inline machine
+streams at 64 KiB. Oversized output is retained in private OS temporary files when
+possible, with a completeness flag. Read only the required portions, then remove
+those scratch files when no longer needed. Host-executor capture limits depend on
+the Pi SDK; the adapter requests a bounded buffer and always bounds saved output.
+Direct CLI/global invocations do not inherit this result contract.
+
+Native execution separates process exit from pipe closure: inherited pipes get a
+200 ms drain window, while cancellation/timeout escalates from SIGTERM after
+250 ms to SIGKILL and waits at most another 1,000 ms for confirmation.
+`captureIncomplete` discloses lost capture; `terminationUnconfirmed` means the OS
+has not confirmed termination. A zero exit with incomplete capture is
+`incomplete-output`, not success. Descendant lifecycle ownership is not changed.
+
 ### Run upstream GSD Core
 
 ```text
@@ -202,7 +249,7 @@ By default, `pi-gsd` auto-detects `context-mode` and `pi-subagents` when their t
 }
 ```
 
-Set either value to `"off"` to make `pi-gsd` treat that integration as unavailable. For example, `"subagents": "off"` keeps GSD workflows single-agent even if the `subagent` tool exists; `"contextMode": "off"` also makes pi-gsd's context-mode guard inert for that project. When Pi exposes an active-tool inventory, `pi-gsd` treats that runtime signal as authoritative for availability. Registered-but-inactive tools and package files on disk are reported diagnostically, but they do not enable delegation or context-mode guidance until the public tool is active.
+Set either value to `"off"` to make `pi-gsd` treat that integration as unavailable. For example, `"subagents": "off"` disables this adapter's delegation integration even if the `subagent` tool exists; required independent child steps must stop rather than silently become inline work; `"contextMode": "off"` also makes pi-gsd's context-mode guard inert for that project. When Pi exposes an active-tool inventory, `pi-gsd` treats that runtime signal as authoritative for availability. Registered-but-inactive tools and package files on disk are reported diagnostically, but they do not enable delegation or context-mode guidance until the public tool is active.
 
 ### Private diagnostics
 
@@ -260,6 +307,7 @@ npm run check       # typecheck source and tests
 npm run build       # emit JS/declarations to dist/ for release validation
 npm test
 npm run test:live-pi       # no LLM API key required
+npm run test:unix          # native Unix Node only; real POSIX cleanup/host-exec probe, no model calls
 npm run test:live-subagent # skipped unless explicitly enabled; uses one parent/child model probe
 npm run release:check
 ```
@@ -293,4 +341,5 @@ Run `/reload` after editing extension code, or restart Pi. Local package install
 - [Standalone virtual-model routing design](docs/VIRTUAL-MODEL-MVP-RESEARCH.md) — proposed reusable library/extension, classifier-shaped policies, automatic selection and explicit effort overrides; not implemented
 - [Usage guide](docs/USAGE.md)
 - [Maintenance and compatibility playbook](docs/MAINTENANCE.md)
+- [Subagent profile portability plan](docs/SUBAGENT-PROFILE-PORTABILITY-PLAN.md) — Ubuntu profile findings, Windows adaptation, runtime inspection defect and proposed provider integration
 - [Upstream Pi-integration proposals](docs/UPSTREAM-PROPOSALS.md)

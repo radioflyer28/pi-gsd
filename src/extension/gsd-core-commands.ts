@@ -140,7 +140,14 @@ function packageLocalGsdCoreRoot(commandPath: string): string {
   return path.resolve(path.dirname(commandPath), "..", "..", "gsd-core");
 }
 
-export function piExecutionGuidance(): string[] {
+export function piExecutionGuidance(audience: "parent" | "leaf" = "parent"): string[] {
+  if (audience === "leaf") return [
+    "", "## Pi execution contract", "",
+    "Use only the tools supplied to this child. If gsd is granted, run upstream CLI operations through gsd({action: 'run', args: [...]}); never use a global/runtime-home CLI or infer runtime profiles from physical agent files.",
+    "Codemode returns a version-1 gsd result object. Check ok before dependent work; use execution.json only when present, and check truncation/recovery paths before using stdout. text is presentation only.",
+    "Own only the assigned bounded work and outputs. Do not activate delegation, select other roles, coordinate phases, or launch children. Escalate missing tools/providers or authorization through contact_supervisor.",
+    "Keep durable GSD artifacts in .planning with upstream naming and semantics. Use codemode only for useful batching/filtering of permitted tools, not to bypass policy. Read before scoped edits and inspect validation outcomes.",
+  ];
   return [
     "",
     "## Pi execution contract",

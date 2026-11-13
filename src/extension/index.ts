@@ -82,8 +82,13 @@ function truncateForPiTool(text: string): string {
 }
 
 export default function registerPiGsdExtension(pi: ExtensionAPI): void {
+  registerPiGsdForAudience(pi, "parent");
+}
+
+export function registerPiGsdForAudience(pi: ExtensionAPI, audience: "parent" | "leaf"): void {
   registerPiGsdCore(pi as unknown as Parameters<typeof registerPiGsdCore>[0], {
     parameters: TOOL_PARAMS,
+    audience,
     truncateOutput: truncateForPiTool,
   });
   registerContextModeGuard(pi as Parameters<typeof registerContextModeGuard>[0]);

@@ -199,3 +199,14 @@ test("default extension registers gsd plus context, routing, and upstream safety
   assert.equal(pi.tools[0].name, "gsd");
   assert.equal(pi.handlers.get("tool_call")?.length, 3);
 });
+
+test("project ancestors named tmp or build do not classify all sources as transient", () => {
+  for (const ancestor of ["tmp", "build"]) {
+    const cwd = path.resolve(path.parse(process.cwd()).root, ancestor, "pi-gsd-project");
+    for (const [file, expected] of [["src/example.ts", "warn"], ["tmp/generated.ts", "allow"], ["logs/example.ts", "allow"]] as const) {
+      const result = evaluateContextModeToolCall({ toolName: "ctx_execute_file", input: { path: file } }, { cwd },
+        { stat: () => fileStats(1024), realpath: () => null });
+      assert.equal(result.action, expected, `${ancestor}: ${file}`);
+    }
+  }
+});

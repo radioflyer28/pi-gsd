@@ -1,4 +1,5 @@
 import * as path from "node:path";
+import { GSD_OUTPUT_SCHEMA, toGsdToolResult } from "./tool-result.ts";
 
 import {
   createGsdDispatcher,
@@ -11,11 +12,12 @@ import {
   resolveCwd,
   type TextTruncator,
 } from "./dispatcher.ts";
-import { detectCapabilities, type Capabilities, type ExistsProbe } from "./capabilities.ts";
+import { detectCapabilities, type Capabilities, type ExistsProbe, type RegisteredToolInfo } from "./capabilities.ts";
 import { appendPiGsdDiagnostic } from "./diagnostics.ts";
+import { ownerRepairNotice } from "./subagent-compatibility.ts";
 import { MAX_PENDING_ROUTES, RoutingAdvisory } from "./routing-advisory.ts";
-import { SUBAGENT_CAPABILITY_GUIDELINES } from "./subagent-guidance.ts";
-import { formatGsdRuntimeAgentStatus, registerGsdRuntimeAgents, type RuntimeAgentHost } from "./runtime-agents.ts";
+import { PI_AGENT_INSTALLATION_GUIDANCE, SUBAGENT_CAPABILITY_GUIDELINES } from "./subagent-guidance.ts";
+import { formatGsdRuntimeAgentStatus, registerGsdRuntimeAgents, type GsdRuntimeAgentStatus, type RuntimeAgentHost } from "./runtime-agents.ts";
 import {
   discoverGsdCoreCommands,
   expandGsdCoreCommandPrompt,
@@ -39,13 +41,15 @@ type TextContent = {
 export type PiToolResult = {
   content: TextContent[];
   details: GsdDispatchResult["details"];
+  isError: boolean;
+  structuredContent: ReturnType<typeof toGsdToolResult>["structuredContent"];
 };
 
 export type RegisterablePiApi = RuntimeAgentHost & {
   registerTool?: (tool: Record<string, unknown>) => void;
   registerCommand?: (name: string, command: Record<string, unknown>) => void;
   getActiveTools?: () => string[];
-  getAllTools?: () => Array<{ name?: string }>;
+  getAllTools?: () => RegisteredToolInfo[];
   getCommands?: () => Array<{ name?: string }>;
   getThinkingLevel?: () => "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
   setThinkingLevel?: (level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max") => void;
@@ -64,6 +68,7 @@ type RuntimeRoutingState = {
 
 export type RegisterPiGsdOptions = {
   parameters: unknown;
+  audience?: "parent" | "leaf";
   dispatcher?: GsdDispatcher;
   exists?: ExistsProbe;
   packageRoot?: string;
@@ -74,13 +79,6 @@ export type RegisterPiGsdOptions = {
   gsdCoreCommands?: GsdCoreCommand[];
 };
 
-function toToolResult(text: string, details: PiToolResult["details"]): PiToolResult {
-  return {
-    content: [{ type: "text", text }],
-    details,
-  };
-}
-
 function activeToolInventory(pi: RegisterablePiApi): { names: string[]; available: boolean } {
   if (!pi.getActiveTools) return { names: [], available: false };
   try {
@@ -90,11 +88,13 @@ function activeToolInventory(pi: RegisterablePiApi): { names: string[]; availabl
   }
 }
 
-function registeredToolInventory(pi: RegisterablePiApi): { names: string[]; available: boolean } {
+function registeredToolInventory(pi: RegisterablePiApi): { names: string[]; available: boolean; tools?: RegisteredToolInfo[] } {
   if (!pi.getAllTools) return { names: [], available: false };
   try {
+    const tools = pi.getAllTools();
     return {
-      names: pi.getAllTools().map((tool) => tool.name).filter((name): name is string => Boolean(name)),
+      tools,
+      names: tools.map((tool) => tool.name).filter((name): name is string => Boolean(name)),
       available: true,
     };
   } catch {
@@ -141,6 +141,7 @@ function createRuntimeAwareDetector(
       activeToolNames: toolInventory.names,
       activeToolInventoryAvailable: toolInventory.available,
       registeredToolNames: allToolInventory.names,
+      registeredTools: allToolInventory.tools,
       registeredToolInventoryAvailable: allToolInventory.available,
       activeCommandNames: commandInventory.names,
       activeCommandInventoryAvailable: commandInventory.available,
@@ -148,11 +149,6 @@ function createRuntimeAwareDetector(
   };
 }
 
-function diagnosticOutcome(text: string): "ok" | "error" | "cancelled" {
-  if (/cancelled/i.test(text)) return "cancelled";
-  if (/\bexited with 0\b/i.test(text) || !/\berror\b|cannot|failed/i.test(text)) return "ok";
-  return "error";
-}
 
 async function executeGsd(
   dispatcher: GsdDispatcher,
@@ -193,12 +189,12 @@ async function executeGsd(
     appendPiGsdDiagnostic(cwd, {
       event: "tool",
       target: `gsd.${action}`,
-      outcome: diagnosticOutcome(result.text),
+      outcome: result.details.execution?.outcome === "cancelled" ? "cancelled" : toGsdToolResult(action, result).isError ? "error" : "ok",
       detail: action === "run" ? `argument count: ${args.length}` : undefined,
     });
   }
 
-  return toToolResult(result.text, result.details);
+  return toGsdToolResult(action, result);
 }
 
 export function parseCommandArgs(input: string): string[] {
@@ -533,7 +529,31 @@ export function registerPiGsdCore(pi: RegisterablePiApi, options: RegisterPiGsdO
     epoch: 0,
   };
   const gsdCoreCommands = options.gsdCoreCommands ?? discoverGsdCoreCommands({ packageRoot: options.packageRoot, exists: options.exists });
-  const runtimeAgents = registerGsdRuntimeAgents(pi, { packageRoot: options.packageRoot });
+  const leaf = options.audience === "leaf";
+  if (!leaf) {
+    // A passive advisory on the next natural model turn; never start a turn,
+    // activate the owner, collect synthetic approval or apply a patch here.
+    const notices = new Set<string>();
+    pi.on?.("before_agent_start", (_event: unknown, ctx: GsdExecutionContext) => {
+      try {
+        const cwd = path.resolve(ctx.cwd ?? options.defaultCwd ?? process.cwd());
+        const caps = detect(cwd);
+        const check = caps.subagentCompatibility;
+        if (caps.integrationSettings.subagents === "off" || check?.nextAction !== "ask-user" || check.state !== "known-unpatched-source") return;
+        const key = JSON.stringify([cwd, check.providerPath, check.lookupSha256]);
+        if (notices.has(key) || notices.size >= 64) return;
+        notices.add(key);
+        return { message: { customType: "gsd-owner-repair-advisory", content: ownerRepairNotice(check), display: true } };
+      } catch { /* A diagnostic must not break unrelated work. */ }
+    });
+    for (const event of ["session_start", "session_shutdown"]) pi.on?.(event, () => { notices.clear(); });
+  }
+  const runtimeAgents: (cwd?: string) => GsdRuntimeAgentStatus = leaf
+    ? () => ({ state: "unavailable", roles: [], reason: "Leaf provider does not register child profiles; escalate missing capabilities through contact_supervisor." })
+    : registerGsdRuntimeAgents(pi, { packageRoot: options.packageRoot });
+  const installationGuidance = leaf
+    ? "The package-local CLI identifies as Pi. Core installation fields describe physical files, not child readiness. Escalate missing required capabilities through contact_supervisor; do not install profiles, activate delegation or silently skip required work."
+    : PI_AGENT_INSTALLATION_GUIDANCE;
   const baseDispatcher = options.dispatcher ?? createGsdDispatcher({
     exec: pi.exec?.bind(pi),
     exists: options.exists,
@@ -542,15 +562,31 @@ export function registerPiGsdCore(pi: RegisterablePiApi, options: RegisterPiGsdO
     truncateOutput: options.truncateOutput,
     detect,
   });
+  function withRuntimeAgents(result: GsdDispatchResult, cwd: string, initialization = false): GsdDispatchResult {
+    const status = runtimeAgents(cwd);
+    return {
+      ...result,
+      text: result.text + (initialization ? `\n\n## Pi initialization context\n\n${installationGuidance}\n` : "")
+        + formatGsdRuntimeAgentStatus(status),
+      details: { ...result.details, piRuntimeAgents: {
+        runtime: "pi", source: "session-registration", requestedCwd: path.resolve(cwd), status, childReadiness: "unverified",
+      } },
+    };
+  }
   const dispatcher: GsdDispatcher = {
     ...baseDispatcher,
     async status(...args) {
-      const result = await baseDispatcher.status(...args);
-      return { ...result, text: result.text + formatGsdRuntimeAgentStatus(runtimeAgents()) };
+      return withRuntimeAgents(await baseDispatcher.status(...args), args[0]);
     },
     async doctor(...args) {
-      const result = await baseDispatcher.doctor(...args);
-      return { ...result, text: result.text + formatGsdRuntimeAgentStatus(runtimeAgents()) };
+      return withRuntimeAgents(await baseDispatcher.doctor(...args), args[0]);
+    },
+    async run(args, cwd, signal) {
+      const result = await baseDispatcher.run(args, cwd, signal);
+      // Cover the canonical query and legacy init spellings without rewriting
+      // Core JSON, including raw output, failures or filesystem-install flags.
+      const initialization = args[0] === "init" || (args[0] === "query" && args[1]?.startsWith("init."));
+      return initialization ? withRuntimeAgents(result, cwd, true) : result;
     },
   };
 
@@ -562,17 +598,23 @@ export function registerPiGsdCore(pi: RegisterablePiApi, options: RegisterPiGsdO
     promptSnippet: "Inspect and call upstream GSD Core through the pi-gsd adapter.",
     promptGuidelines: [
       "Use pi-gsd as a thin wrapper over upstream GSD Core; do not duplicate GSD workflow semantics.",
+      "Codemode receives a version-1 object, not a string: check result.ok before dependent work; use execution.json only when present, execution.stdout/stderr and completeness/recovery paths otherwise. modelRouting and runtimeAgents are separate evidence. Expected execution failures retain structured data with ok=false; validation/blocked calls may reject. text is for display. Do not parse CLI exit status from prose.",
       "Use `.planning/` only for normal GSD-compatible project records.",
       "Use context-mode `ctx_*` tools only for bulky or transient context when available.",
       "Use `gsd` action `init-config` only when the user wants editable project-local pi-gsd defaults.",
-      "Use `gsd` action `resolve-model` to resolve Pi-native model/thinking guidance for GSD agents, skills, or commands.",
+      ...(leaf ? [
+        "Leaf execution only: use assigned tools and outputs; do not activate delegation, select other roles or coordinate phases. Escalate missing capabilities through contact_supervisor.",
+      ] : [
+      "Parent coordinators: use `gsd` action `resolve-model` to resolve Pi-native model/thinking guidance for GSD agents, skills, or commands.",
       "Before each bounded GSD child assignment, call `gsd` action `resolve-model` with its exact agent name and a taskId. When version-2 policy permits, request tier heavy, standard or light for that task; never request arbitrary model IDs. Obey the consumer action: exact model for pass-model, omit for omit-model, do not delegate for resolve-first.",
       "Keep tiny work inline when delegation overhead is greater. Preserve upstream role instructions and delegation authorization; hand off bounded inputs, output ownership and verification expectations, not a replacement GSD workflow.",
       "Decision/task IDs are correlation only, not subagent tool arguments or permissions. Pass each physical model per child. Task-scoped or scripted launch association may be unavailable; do not infer successful validation from a top-level workflow model.",
       "Use pi-subagents directly for large planning/execution/review when available; do not expect the `gsd` tool to orchestrate subagents internally.",
       ...SUBAGENT_CAPABILITY_GUIDELINES,
+      ]),
     ],
     parameters: options.parameters,
+    outputSchema: GSD_OUTPUT_SCHEMA,
     execute: (
       _toolCallId: string,
       params: GsdParams = {},

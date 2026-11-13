@@ -4,6 +4,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { loadPiGsdConfig, type IntegrationMode } from "./config.ts";
+import { inspectSubagentCompatibility, type OwnerCompatibility } from "./subagent-compatibility.ts";
 
 export type CapabilityName = "gsdCore" | "gsdTools" | "subagents" | "contextMode";
 
@@ -12,6 +13,7 @@ export type GsdMode = "inline" | "ctx-inline" | "delegated" | "delegated-ctx";
 export type CapabilityPaths = Record<CapabilityName, string | null>;
 export type IntegrationProvenance =
   | "active-tool"
+  | "activation-tool"
   | "registered-tool-inactive"
   | "filesystem"
   | "filesystem-inactive"
@@ -22,7 +24,12 @@ export type IntegrationPackageInfo = {
   version?: string;
 };
 
+export type SubagentState = "active" | "activation-available" | "inactive" | "absent" | "disabled";
+export type RegisteredToolInfo = { name?: string; sourceInfo?: { path?: string } };
 export type Capabilities = {
+  subagentState?: SubagentState;
+  subagentCompatibility?: OwnerCompatibility;
+  loadedProviders?: Partial<Record<"subagents" | "contextMode", Array<{ tool: string; path: string }>>>;
   gsdCore: boolean;
   subagents: boolean;
   contextMode: boolean;
@@ -68,6 +75,7 @@ export type CapabilityDetectionOptions = {
   activeToolNames?: string[];
   activeToolInventoryAvailable?: boolean;
   registeredToolNames?: string[];
+  registeredTools?: RegisteredToolInfo[];
   registeredToolInventoryAvailable?: boolean;
   activeCommandNames?: string[];
   activeCommandInventoryAvailable?: boolean;
@@ -246,10 +254,11 @@ export function detectCapabilities(options: CapabilityDetectionOptions = {}): Ca
     exists,
   );
 
+  const activationAvailable = activeToolInventoryAvailable && activeToolNames.has("subagents_enable");
   const paths: CapabilityPaths = {
     gsdCore: firstExisting(candidates.gsdCore, exists),
     gsdTools: firstExisting(candidates.gsdTools, exists),
-    subagents: subagents.path,
+    subagents: subagents.path ?? (activationAvailable ? "subagents_enable" : null),
     contextMode: contextMode.path,
   };
 
@@ -259,6 +268,16 @@ export function detectCapabilities(options: CapabilityDetectionOptions = {}): Ca
   const contextModePackage = inspectPackageInfo(contextMode.installedPath);
   const hasSubagents = integrationSettings.subagents !== "off" && subagents.available;
   const hasContextMode = integrationSettings.contextMode !== "off" && contextMode.available;
+  const subagentState: SubagentState = integrationSettings.subagents === "off" ? "disabled"
+    : hasSubagents && activeToolInventoryAvailable && activeToolNames.has("subagent") ? "active"
+    : activationAvailable ? "activation-available"
+    : detectedSubagents ? "inactive" : "absent";
+  const loadedProviders: NonNullable<Capabilities["loadedProviders"]> = {};
+  for (const [integration, names] of [["subagents", ["subagent", "subagents_enable"]], ["contextMode", ["ctx_execute", "ctx_execute_file", "ctx_search", "ctx_index", "ctx_batch_execute"]]] as const) {
+    const providers = (options.registeredTools ?? []).filter((tool) => (names as readonly string[]).includes(tool.name ?? "") && typeof tool.sourceInfo?.path === "string")
+      .map((tool) => ({ tool: tool.name!, path: tool.sourceInfo!.path! }));
+    if (providers.length) loadedProviders[integration] = providers;
+  }
   const mode: GsdMode =
     hasSubagents && hasContextMode
       ? "delegated-ctx"
@@ -269,6 +288,14 @@ export function detectCapabilities(options: CapabilityDetectionOptions = {}): Ca
           : "inline";
 
   return {
+    subagentState,
+    subagentCompatibility: inspectSubagentCompatibility([
+      ...(options.registeredTools ?? []),
+      ...[...new Set([...activeToolNames, ...registeredToolNames])]
+        .filter((name) => !options.registeredTools?.some((tool) => tool.name === name))
+        .map((name) => ({ name })),
+    ], integrationSettings.subagents !== "off"),
+    loadedProviders,
     gsdCore: Boolean(paths.gsdCore || paths.gsdTools),
     subagents: hasSubagents,
     contextMode: hasContextMode,
@@ -279,7 +306,7 @@ export function detectCapabilities(options: CapabilityDetectionOptions = {}): Ca
       contextMode: detectedContextMode,
     },
     provenance: {
-      subagents: subagents.provenance,
+      subagents: !subagents.available && activationAvailable ? "activation-tool" : subagents.provenance,
       contextMode: contextMode.provenance,
     },
     integrationPackages: {

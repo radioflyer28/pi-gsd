@@ -1,0 +1,21 @@
+diff --git a/src/agents/agent-management.ts b/src/agents/agent-management.ts
+--- a/src/agents/agent-management.ts
++++ b/src/agents/agent-management.ts
+@@ -1153,7 +1153,7 @@
+ 	const scope = normalizeListScope(params.agentScope);
+ 	if (!scope) return result("agentScope must be 'user', 'project', or 'both' for get.", true);
+ 	const discovered = discoverCatalog(ctx, ctx.cwd, ctx.model?.provider);
+-	const matches = findAgentsInDiscovery(params.agent, discovered, scope);
++	const matches = findAgentsInDiscovery(params.agent, discovered, scope, ctx.runtimeAgentOwner, ctx.model?.provider);
+ 	const diagnostics = diagnosticsForScope(discovered.agentDiagnostics, scope);
+ 	const rawName = params.agent.trim();
+ 	const normalizedName = sanitizeName(rawName);
+@@ -1163,7 +1163,7 @@
+ 	const distinctNames = [...new Set(matches.map((agent) => agent.name))];
+ 	if (distinctNames.length > 1) return result(`Ambiguous agent alias or name '${params.agent}': ${distinctNames.sort((a, b) => a.localeCompare(b)).join(", ")}`, true);
+ 	if (!matches.length) {
+-		return result(`Agent '${params.agent}' not found. Available: ${availableAgentNamesFromDiscovery(discovered).join(", ") || "none"}.`, true);
++		return result(`Agent '${params.agent}' not found. Available: ${availableAgentNamesFromDiscovery(discovered, ctx.runtimeAgentOwner, ctx.model?.provider).join(", ") || "none"}.`, true);
+ 	}
+ 	return result(matches.map(formatAgentDetail).join("\n\n"));
+ }

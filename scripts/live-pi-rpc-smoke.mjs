@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import * as path from "node:path";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const piPackageRoot = path.join(repoRoot, "node_modules", "@earendil-works", "pi-coding-agent");
+const piPackageRoot = process.env.PI_GSD_SMOKE_SDK_ROOT ?? path.join(repoRoot, "node_modules", "@earendil-works", "pi-coding-agent");
 const piManifest = JSON.parse(readFileSync(path.join(piPackageRoot, "package.json"), "utf8"));
 const piEntrypoint = path.resolve(piPackageRoot, piManifest.bin.pi);
 const requiredCommands = [
@@ -45,7 +45,7 @@ const child = spawn(
     "-e",
     "./src/extension/index.ts",
   ],
-  { cwd: repoRoot, stdio: ["pipe", "pipe", "pipe"], windowsHide: true },
+  { cwd: repoRoot, stdio: ["pipe", "pipe", "pipe"], windowsHide: true, env: { ...process.env, GSD_RUNTIME: "claude" } },
 );
 
 let stdoutBuffer = "";
@@ -55,7 +55,7 @@ const timeout = setTimeout(() => {
   if (settled) return;
   settled = true;
   child.kill("SIGTERM");
-  fail("timed out waiting for Pi RPC command inventory or visible doctor report", stderr);
+  fail("timed out waiting for Pi RPC command inventory or visible doctor/init reports", stderr);
 }, 20_000);
 
 child.on("error", (error) => {
@@ -116,6 +116,10 @@ child.stdout.on("data", (chunk) => {
       continue;
     }
 
+    if (message.type === "agent_start") {
+      child.kill("SIGTERM");
+      fail("local slash commands must not request a model turn");
+    }
     if (message.type === "extension_error") {
       child.kill("SIGTERM");
       fail("Pi emitted an extension error", JSON.stringify(message, null, 2));
@@ -141,9 +145,29 @@ child.stdout.on("data", (chunk) => {
       send({ id: "pi-gsd-live-output", type: "get_messages" });
       continue;
     }
+    if (message.id === "pi-gsd-live-init" && message.command === "prompt") {
+      if (!message.success) { child.kill("SIGTERM"); fail("Pi RPC init query failed"); }
+      send({ id: "pi-gsd-live-init-output", type: "get_messages" });
+      continue;
+    }
+    if (message.id === "pi-gsd-live-init-output" && message.command === "get_messages") {
+      const report = message.data?.messages?.find((entry) =>
+        entry.role === "custom" && entry.customType === "gsd-command-result"
+        && entry.display === true && entry.details?.command === "gsd-run");
+      const text = typeof report?.content === "string" ? report.content : (report?.content ?? []).map((part) => part.text ?? "").join("\n");
+      if (!message.success || !text.includes("gsd-tools exited with 0") || !/"agent_runtime":\s*"pi"/.test(text)
+          || !text.includes("## Pi initialization context") || !text.includes("registration: unavailable")
+          || !text.includes("physical agent files, not pi-subagents runtime registration")) {
+        child.kill("SIGTERM");
+        fail("init query did not display Pi identity and honest session registration", text);
+      }
+      settled = true;
+      clearTimeout(timeout);
+      console.log(`live-pi-rpc-smoke: ok (${commandSummary.total} total commands, ${commandSummary.gsd} gsd-* extension commands; doctor + init reports visible; Pi ${piManifest.version}; no model turns)`);
+      child.kill("SIGTERM");
+      continue;
+    }
     if (message.id !== "pi-gsd-live-output" || message.command !== "get_messages") continue;
-    settled = true;
-    clearTimeout(timeout);
     const report = message.data?.messages?.find((entry) =>
       entry.role === "custom" && entry.customType === "gsd-command-result"
       && entry.display === true && entry.details?.command === "gsd-doctor");
@@ -154,8 +178,7 @@ child.stdout.on("data", (chunk) => {
       fail("doctor completed without a visible diagnostic report");
     }
 
-    console.log(`live-pi-rpc-smoke: ok (${commandSummary.total} total commands, ${commandSummary.gsd} gsd-* extension commands; /gsd-doctor report visible)`);
-    child.kill("SIGTERM");
+    send({ id: "pi-gsd-live-init", type: "prompt", message: "/gsd-run query init.plan-phase 6" });
   }
 });
 

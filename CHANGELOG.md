@@ -4,6 +4,36 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [1.19.0-pi.3] - 2026-11-13
+
+### Added
+
+- Versioned structured `gsd` results with an output schema, explicit success/error state, execution evidence, model-routing decisions and cwd-scoped runtime registration. Display text and legacy details remain available.
+- A dedicated leaf provider that exposes GSD operations without parent coordination guidance or nested runtime-role registration.
+- Explicit, trusted child-provider bindings for multi-edit on the phase researcher, planner, pattern mapper and executor, and research web on the phase researcher. Parent installation alone does not opt children in; unavailable requested providers affect only dependent roles.
+- Known-source pi-subagents compatibility diagnostics and an approval-gated repair guide with the reviewed 0.88.1 runtime-only lookup patch. Unknown source versions are not presumed broken. No repair, installation or activation occurs automatically.
+- Reproducible no-model compatibility matrices and Unix process-cleanup acceptance checks with explicit SDK, owner and provider inputs.
+
+### Changed
+
+- Preserve stock child `read`/`edit`/`write` authoring and `codemode` by default. An explicit multi-edit binding supplies matched read/edit tools without a redundant separate write tool.
+- Support verified builtin Windows `powershell` when no `pwsh` integration is registered. A valid approved `pwsh` provider retains precedence; hidden or broken integrations are not bypassed, and Windows does not fall back to Bash.
+- Distinguish loaded provider provenance, activation availability, registration, role lookup and unverified child readiness in status/doctor output. Activation is not delegation authorization or managed-process readiness.
+- Keep GSD Core pinned exactly to 1.19.0. Workflow semantics, canonical role bodies, routing policy and opt-in upstream guard ownership remain unchanged.
+
+### Fixed
+
+- Run package-local Core CLI children with subprocess-local Pi identity while preserving the CLI main-module entrypoint, parent environment, project/global defaults and Core's physical installation facts.
+- Bound native output capture and recovery, separate process exit from inherited-pipe drainage, and make cancellation/timeout escalation report incomplete capture or unconfirmed termination truthfully. Recovery failures remain sticky rather than implying complete output.
+- Avoid treating every source file beneath a temporary checkout as transient context: classify paths relative to the project root.
+
+### Verification and limitations
+
+- Windows acceptance: 244 tests, source/test typechecks, build, release metadata and package-content checks; 72 native-child cases across Pi 1.3.0/1.5.2, stock/enhanced tools and foreground/detached modes, including direct and codemode calls.
+- Ubuntu WSL acceptance included native Linux process cleanup, host CLI identity, visible RPC reports and 18 equipped child cases; the subsequent profile/guidance follow-up passed 36 tests, and the release candidate's full suite passed 244 tests under native Ubuntu Node. Detailed checkpoints and source provenance are in the profile guide and design review.
+- Native-child acceptance used the reviewed patched pi-subagents 0.88.1 source, not stock-owner end-to-end acceptance. Minimum-owner, credentialed model/web workflows, ambient deployment and existing-session reload remain unverified; macOS has not received the equivalent native-child acceptance matrix.
+- Existing installations must select this adapter release before reload/restart can expose it. Changing the owner source requires the separately approved activation and full restart described in the repair guide. No installed settings or stopped project workflows are changed by this release.
+
 ## [1.19.0-pi.2] - 2026-11-02
 
 ### Fixed

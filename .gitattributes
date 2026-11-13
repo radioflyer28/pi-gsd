@@ -1,0 +1,2 @@
+# Unified patch context markers precede upstream tab indentation; keep patch bytes LF.
+docs/patches/*.patch text eol=lf whitespace=-space-before-tab

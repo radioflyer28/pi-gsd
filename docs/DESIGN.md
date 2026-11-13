@@ -49,6 +49,19 @@ The command names are intentionally namespaced. Avoid adding broad names like `/
 
 Dynamic `/gsd-*` command prompts are sent inside Pi's native `<skill ...>` envelope. Pi therefore renders the expanded upstream workflow as a collapsed skill invocation by default and lets the user reveal it with the configured `app.tools.expand` binding (`Ctrl+O` by default). The full envelope remains in model context; this is a display-only optimization.
 
+## Machine interface and execution outcomes
+
+The single `gsd` tool declares an output schema. Codemode receives a versioned
+structured result, while chat and slash commands receive presentation text. The
+machine contract includes `ok`, normalized execution facts, optional complete Core
+JSON, capabilities, model routing and scoped runtime-registration evidence.
+Expected CLI failures return structured data with a tool error flag; callers must
+check `ok`. Invalid/blocked calls may reject. Unknown or killed execution cannot
+become success through a default exit code. Output recovery uses bounded private
+OS temporary files, not durable GSD state. The Core transport module owns process
+launch, Pi identity, cancellation and capture; presentation never decides success
+by parsing prose. See the [design review](PACKAGE-DESIGN-REVIEW.md).
+
 ## Dispatcher boundary
 
 All GSD execution goes through a small dispatcher abstraction with these operations:
@@ -76,7 +89,7 @@ The wrapper reports four modes:
 
 Detection prefers active Pi tool inventory when available. Public tools such as `ctx_execute` and `subagent` are stronger signals than files on disk because they prove the other Pi package is actually loaded. Status reports that provenance.
 
-When Pi exposes an active inventory, a missing public tool is authoritative for availability: `pi-gsd` does not enable an inactive integration from stale package files. It still inspects the registered-tool inventory and standard package paths so status/doctor can distinguish "not installed" from "installed or loaded but inactive" and recommend a reload. Filesystem evidence enables an integration only on runtimes that do not expose active inventory.
+When Pi exposes an active inventory, a missing public tool is authoritative for availability: `pi-gsd` does not enable an inactive integration from stale package files. It separately reports loaded tool-provider provenance and installed package candidates; disk versions never prove the loaded owner source. An active `subagents_enable` with registered `subagent` means activation is available, not that delegation is active or authorized. Doctor describes authorized activation rather than suggesting reload for this normal state. Filesystem evidence enables an integration only on runtimes that do not expose active inventory.
 
 Project-local `.pi-gsd/config.json` can mask optional integrations after detection:
 
@@ -136,7 +149,7 @@ Use `pi-subagents` for fresh-context and parallel work. Before selecting any GSD
 
 `pi-gsd` does not call `subagent` internally. Large GSD planning, execution, review, and verification can use `pi-subagents` directly from the parent model when status or doctor output reports it as available. A cwd-scoped, warn-only `tool_call` validator compares the next launch with freshly resolved consumer guidance, consumes that pending contract, and fails open; it never mutates, blocks, or launches children.
 
-Capability checks apply to planning, execution, verification, review and research assignments, not just executors. Profiles performing GSD operations must both allowlist `gsd` and load pi-gsd in the child. A generic `worker` remains restricted. Operator-configured [subagent profiles](SUBAGENT-PROFILES.md) bind tools/providers without packaging GSD role agents or duplicating workflow semantics. Operational profiles can serve different upstream roles with separately supplied current instructions and model routes. Inspection-only profiles omit GSD, shell and write tools: `gsd` has mutating actions, no per-action permission restriction, and a read-only acceptance label is not access enforcement. Assignments needing validation use a platform shell for bounded foreground work; managed jobs and their lifetime verification remain separate opt-ins. Coordination/nested delegation requires separate authorization and configuration. Capability listings describe configuration, not actual registration. The adapter now registers core native role definitions through pi-subagents' supported event API at parent startup and disposes them at shutdown/reload. It does not import pi-subagents preflight, inspect launch registries, mutate local profile files, or replace the owner's launch gate.
+Capability checks apply to planning, execution, verification, review and research assignments, not just executors. Profiles performing GSD operations must both allowlist `gsd` and load pi-gsd in the child. A generic `worker` remains restricted. Operator-configured [subagent profiles](SUBAGENT-PROFILES.md) bind tools/providers without packaging GSD role agents or duplicating workflow semantics. Operational profiles can serve different upstream roles with separately supplied current instructions and model routes. Inspection-only profiles omit GSD, shell and write tools: `gsd` has mutating actions, no per-action permission restriction, and a read-only acceptance label is not access enforcement. Assignments needing validation use a platform shell for bounded foreground work; managed jobs and their lifetime verification remain separate opt-ins. Coordination/nested delegation requires separate authorization and configuration. Capability listings describe configuration, not actual registration. The adapter registers core native role definitions through pi-subagents' supported event API at parent startup and disposes them at shutdown/reload. Missing shell or optional providers exclude only dependent roles; leaf prompts contain child execution guidance rather than parent coordination instructions. It does not import pi-subagents preflight, inspect launch registries, mutate local profile files, or replace the owner's launch gate.
 
 In combined mode, the preferred pattern is:
 
