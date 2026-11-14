@@ -26,6 +26,7 @@ All notable changes to this project are documented here.
 - Run package-local Core CLI children with subprocess-local Pi identity while preserving the CLI main-module entrypoint, parent environment, project/global defaults and Core's physical installation facts.
 - Bound native output capture and recovery, separate process exit from inherited-pipe drainage, and make cancellation/timeout escalation report incomplete capture or unconfirmed termination truthfully. Recovery failures remain sticky rather than implying complete output.
 - Avoid treating every source file beneath a temporary checkout as transient context: classify paths relative to the project root.
+- Compare canonical child working-directory paths in CLI identity tests so macOS's symlinked temporary directories do not cause a false failure; the host's requested cwd, argument and environment checks remain unchanged.
 
 ### Verification and limitations
 

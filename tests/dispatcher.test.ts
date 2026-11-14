@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import test from "node:test";
@@ -509,7 +509,8 @@ test("package-local CLI identifies as Pi in normal host exec and Windows shim pa
       const result = await dispatcher.run(args, root, signal);
       assert.match(result.text, /gsd-tools exited with 0/);
       const data = JSON.parse(result.text.slice(result.text.indexOf("{")));
-      assert.deepEqual(data, { runtime: "pi", args, cwd: root, inherited: true });
+      // process.cwd() resolves symlinked temporary roots (macOS /var -> /private/var).
+      assert.deepEqual(data, { runtime: "pi", args, cwd: realpathSync(root), inherited: true });
       assert.equal(hostCalls, shimName.endsWith(".cmd") ? 0 : 1);
       assert.equal(process.env.GSD_RUNTIME, "codex");
     }
